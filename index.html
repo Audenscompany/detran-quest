@@ -8214,6 +8214,34 @@ function confirmMicroInfo(){
   checkNotTooFast(advanceLearningStep);
 }
 
+// ═══ QUESTÃO ALTERNATIVA NO DISCOVERY (jamais igual à questão oficial) ═══
+async function getAlternativeDiscoveryQ(concept, originalQ){
+  const cacheKey='dq_altq_'+concept.id;
+  const cached=localStorage.getItem(cacheKey);
+  if(cached) return cached;
+  const apiKey=localStorage.getItem('dq_anthropic_key');
+  if(!apiKey) return null;
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:120,
+        system:'Você cria perguntas de teste inicial para um jogo de CNH brasileiro. Dado um conceito e a pergunta oficial, crie UMA pergunta COMPLETAMENTE DIFERENTE que teste o mesmo conhecimento com cenário ou palavras distintas. Máximo 20 palavras. Retorne APENAS a pergunta, sem pontuação extra.',
+        messages:[{role:'user',content:'Conceito: '+concept.name+'\nRegra: '+(concept.teach&&concept.teach.rule||'')+'\nPergunta oficial: '+originalQ+'\n\nPergunta alternativa:'}]
+      })
+    });
+    if(res.ok){
+      const data=await res.json();
+      const alt=(data.content&&data.content[0]&&data.content[0].text||'').trim();
+      if(alt) localStorage.setItem(cacheKey,alt);
+      return alt||null;
+    }
+  }catch(e){}
+  return null;
+}
+
 // ───────────────────────────────────────────────
 // DISCOVERY — o aluno tenta prever a regra ANTES de ser ensinada
 // ───────────────────────────────────────────────
@@ -8221,14 +8249,19 @@ function renderDiscovery(step){
   const concept=getConceptById(_learningConceptId);
   const realQ=concept&&concept.questions[0]?concept.questions[0].txt:'';
   const isSame=realQ&&step.question.trim()===realQ.trim();
-  const questionText=isSame?'Antes de aprender — '+step.question:step.question;
-  document.getElementById('game-area').innerHTML=`
-<div class="flow-card learn-flow" style="border-color:rgba(139,92,246,.3)">
-  <div class="flow-tag" style="color:#a78bfa">🔍 Teste seu conhecimento prévio</div>
-  <div style="font-size:10px;color:var(--mu);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Você ainda não viu a explicação</div>
-  <div class="flow-title-sm">${questionText}</div>
-  <div id="opts">${step.options.map((o,i)=>`<button class="opt-flow" onclick="answerDiscovery(${i},${step.correct},'${(step.feedback||'').replace(/'/g,"\'")}')">${o}</button>`).join('')}</div>
-</div>`;
+  const makeOpts=()=>step.options.map((o,i)=>`<button class="opt-flow" onclick="answerDiscovery(${i},${step.correct},'${(step.feedback||'').replace(/'/g,"\\'")}')">` +o+`</button>`).join('');
+
+  const renderWith=(qText)=>{
+    document.getElementById('game-area').innerHTML=`<div class="flow-card learn-flow" style="border-color:rgba(139,92,246,.3)"><div class="flow-tag" style="color:#a78bfa">🔍 Teste seu conhecimento prévio</div><div style="font-size:10px;color:var(--mu);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Antes de ver a explicação — tente responder</div><div class="flow-title-sm" id="disc-q-text">${qText}</div><div id="opts">${makeOpts()}</div></div>`;
+  };
+
+  renderWith(step.question);
+
+  if(isSame && concept){
+    getAlternativeDiscoveryQ(concept,step.question).then(alt=>{
+      if(alt){ const el=document.getElementById('disc-q-text'); if(el) el.textContent=alt; }
+    });
+  }
 }
 
 function answerDiscovery(pos,correct,feedback){
