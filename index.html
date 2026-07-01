@@ -260,6 +260,13 @@ body.theme-arcade_fight .play-btn,body.theme-arcade_fight .login-title{text-shad
 .sc-send:disabled{opacity:.35;cursor:default;}
 .sc-footer{font-size:10px;color:var(--mu);text-align:center;margin-top:6px;}
 .sc-footer a{color:var(--pu2);cursor:pointer;font-weight:700;}
+/* ═══ TDAH TEACH CARDS ═══ */
+.adhd-card{border-color:rgba(167,139,250,.35)!important;background:linear-gradient(160deg,var(--c1) 0%,rgba(139,92,246,.06) 100%);}
+.adhd-hook{font-size:15px;font-weight:800;color:#f5a623;margin-bottom:10px;line-height:1.45;padding:10px 12px;background:rgba(245,166,35,.08);border-radius:10px;border-left:3px solid #f5a623;}
+.adhd-rule{font-size:14px;font-weight:700;color:var(--tx);background:rgba(78,205,164,.08);border-radius:8px;padding:10px 12px;margin:8px 0;line-height:1.6;border-left:3px solid var(--gn);}
+.adhd-mnemonic{font-size:13px;color:#a78bfa;margin-top:8px;padding:8px 12px;background:rgba(139,92,246,.08);border-radius:8px;border-left:3px solid #a78bfa;}
+.adhd-tap{font-size:11px;color:var(--mu);text-align:center;margin-top:12px;font-weight:600;}
+.fb-mnemonic{font-size:12px;color:#a78bfa;margin:6px 0;padding:6px 10px;background:rgba(139,92,246,.1);border-radius:6px;}
 /* ═══ EXAM TOMORROW ═══ */
 .exam-fab{position:fixed;bottom:155px;right:14px;background:linear-gradient(135deg,#e5484d,#9b2226);color:#fff;border:none;border-radius:99px;padding:8px 14px;font-size:11px;font-weight:800;cursor:pointer;z-index:80;box-shadow:0 4px 14px rgba(229,72,77,.5);white-space:nowrap;animation:pulseUpdate 1.5s ease-in-out infinite;}
 .exam-fab.active{background:linear-gradient(135deg,#4ecda4,#1a6e52);animation:none;}
@@ -8220,12 +8227,18 @@ function answerTooFastCheck(pos,correct){
 // de um toque que conta como confirmação mínima de leitura.
 // ───────────────────────────────────────────────
 function renderMicroInfo(step){
-  document.getElementById('game-area').innerHTML=`
+  const concept=getConceptById(_learningConceptId);
+  if(G.adhdMode&&concept&&step.text&&step.text.length>80){
+    // Texto longo: usar card TDAH ultra-curto
+    renderADHDCard(concept,step.text,'confirmMicroInfo()');
+  } else {
+    document.getElementById('game-area').innerHTML=`
 <div class="flow-card learn-flow micro-info-flow">
-  <div class="flow-tag">📖 ${getConceptById(_learningConceptId).topicName}</div>
+  <div class="flow-tag">📖 ${concept?concept.topicName:''}</div>
   <div class="micro-info-text">${step.text}</div>
   <button class="play-btn" onclick="confirmMicroInfo()">Continuar →</button>
 </div>`;
+  }
 }
 function confirmMicroInfo(){
   checkNotTooFast(advanceLearningStep);
@@ -8301,12 +8314,17 @@ function answerDiscovery(pos,correct,feedback){
 // MEMORY CARD — cartão curto, toque obrigatório, sempre 1 fato só
 // ───────────────────────────────────────────────
 function renderMemoryCard(step){
-  document.getElementById('game-area').innerHTML=`
+  const concept=getConceptById(_learningConceptId);
+  if(G.adhdMode&&concept){
+    renderADHDCard(concept,step.text,'confirmMemoryCard()');
+  } else {
+    document.getElementById('game-area').innerHTML=`
 <div class="flow-card learn-flow memory-card-flow" onclick="confirmMemoryCard()">
   <div class="flow-tag">🧠 Memorize</div>
   <div class="memory-card-text">${step.text}</div>
   <div class="memory-card-hint">toque para continuar</div>
 </div>`;
+  }
 }
 function confirmMemoryCard(){
   checkNotTooFast(advanceLearningStep);
@@ -8845,7 +8863,11 @@ function showFeedback(ok,Q,title,elapsed){
   fb.className='fb-flow '+(ok?'fb-ok':'fb-ko');
   let extra='';
   if(!ok) extra=`<div class="fb-rule-flow">${Q.rule}</div>`;
-  fb.innerHTML=`<div class="fb-title-flow">${title}</div><div class="fb-why-flow">${Q.why}</div>${extra}
+  // Macete TDAH no feedback de acerto
+  const _adhdCached=G.adhdMode?localStorage.getItem(ADHD_CACHE_PREFIX+(G.curConceptId||'')):null;
+  const _adhdMnem=_adhdCached?JSON.parse(_adhdCached).mnemonic:'';
+  const _mnemonicHtml=ok&&_adhdMnem?`<div class="fb-mnemonic">🧠 ${_adhdMnem}</div>`:'';
+  fb.innerHTML=`<div class="fb-title-flow">${title}</div><div class="fb-why-flow">${Q.why}</div>${extra}${_mnemonicHtml}
   <div class="flow-actions">
     ${!ok && G.wrongCount<2?'<button class="opt-flow retry-flow" onclick="retryQ()">🔁 Tentar de novo</button>':''}
     ${!ok && G.wrongCount>=2?'<button class="opt-flow retry-flow" onclick="compactReteach()">🔄 Reensino rápido</button>':''}
@@ -8976,6 +8998,7 @@ function processAnswer(ok,elapsedSec,wasGuess){
   checkThemeUnlocks();
   maybeTriggerBoss(concept.topic);
   showReactionFeedback(elapsedSec,ok);
+  checkADHDBreak();
   saveGame();
 }
 
@@ -9761,6 +9784,79 @@ REGRAS CRÍTICAS:
   }catch(e){
     console.error('autoImplementChange:',e);
     updateBubble('❌ Erro: '+e.message+'. Tente novamente ou descreva de forma mais específica.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SISTEMA DE ENSINO TDAH
+// Gera hook + regra ultra-curta + macete para cada conceito via IA
+// Cache em localStorage — gerado 1x por conceito, permanente
+// ═══════════════════════════════════════════════════════════════
+const ADHD_CACHE_PREFIX='dq_adhd_v1_';
+let _adhdBreakCount=0; // contador para sugerir pausa a cada 15 questões
+
+async function getADHDTeach(concept){
+  if(!concept) return null;
+  const cacheKey=ADHD_CACHE_PREFIX+concept.id;
+  try{
+    const cached=localStorage.getItem(cacheKey);
+    if(cached) return JSON.parse(cached);
+  }catch(e){}
+  const apiKey=localStorage.getItem('dq_anthropic_key');
+  if(!apiKey) return null;
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:220,
+        system:'Você cria conteúdo de ensino ultra-otimizado para TDAH sobre CNH brasileira. Retorne APENAS JSON válido:\n{"hook":"1 frase chocante/curiosa que prende atenção (max 12 palavras)","rule":"a regra mais importante em 1 frase direta (max 10 palavras)","mnemonic":"macete/rima/sigla para nunca esquecer (max 10 palavras)"}\nSem markdown, sem explicação.',
+        messages:[{role:'user',content:'Conceito: '+concept.name+'\nRegra: '+(concept.teach&&concept.teach.rule||'')+'\nDetalhe: '+(concept.teach&&concept.teach.body||'').slice(0,200)}]
+      })
+    });
+    if(!res.ok) return null;
+    const data=await res.json();
+    const raw=(data.content&&data.content[0]&&data.content[0].text||'').replace(/```json|```/g,'').trim();
+    const result=JSON.parse(raw);
+    if(result&&result.hook&&result.rule&&result.mnemonic){
+      localStorage.setItem(cacheKey,JSON.stringify(result));
+      return result;
+    }
+  }catch(e){}
+  return null;
+}
+
+function renderADHDCard(concept, fallbackText, onTap){
+  const gameArea=document.getElementById('game-area');
+  // Render imediato com conteúdo existente
+  gameArea.innerHTML=`
+<div class="flow-card learn-flow adhd-card" onclick="${onTap}">
+  <div class="flow-tag" style="color:#a78bfa">⚡ Modo TDAH — Memorize em 10s</div>
+  <div class="adhd-hook" id="adhd-hook-el">💡 ${concept.teach&&concept.teach.rule||fallbackText}</div>
+  <div class="adhd-rule" id="adhd-rule-el">${fallbackText}</div>
+  <div class="adhd-mnemonic" id="adhd-mnem-el" style="display:none"></div>
+  <div class="adhd-tap">👆 toque para continuar</div>
+</div>`;
+  // Enriquecer com IA em background
+  getADHDTeach(concept).then(teach=>{
+    if(!teach) return;
+    const h=document.getElementById('adhd-hook-el');
+    const r=document.getElementById('adhd-rule-el');
+    const m=document.getElementById('adhd-mnem-el');
+    if(h) h.innerHTML='🎯 '+teach.hook;
+    if(r) r.innerHTML='📌 '+teach.rule;
+    if(m){ m.innerHTML='🧠 Macete: <b>'+teach.mnemonic+'</b>'; m.style.display='block'; }
+  });
+}
+
+// Sugestão de pausa TDAH a cada 15 questões respondidas
+function checkADHDBreak(){
+  if(!G.adhdMode) return;
+  _adhdBreakCount++;
+  if(_adhdBreakCount>=15){
+    _adhdBreakCount=0;
+    setTimeout(()=>showToast('🧠 TDAH: Faça 2 min de pausa agora — seu cérebro vai absorver melhor!'),800);
   }
 }
 
