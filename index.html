@@ -8701,46 +8701,23 @@ function goQuestion(){
   G.answered=false;
   _currentAIQuestion=null;
   const concept=getConceptById(G.curConceptId);
+  if(!concept){ nextStep(); return; }
   const c=G.concepts[concept.id];
   G.curQIdx=concept.questions.length>1?(c.attempts%concept.questions.length):0;
   renderQuestion(false);
-  // Gerar questão IA em background — se chegar antes de responder, substitui
-  const apiKey=localStorage.getItem('dq_anthropic_key');
-  if(apiKey&&concept&&!_aiQGenerating){
+  // IA gera questão SÓ após resposta, nunca interfere com os botões
+  if(!_aiQGenerating&&localStorage.getItem('dq_anthropic_key')){
     _aiQGenerating=true;
-    generateAIQuestion(concept).then(q=>{
+    setTimeout(()=>{
       _aiQGenerating=false;
-      if(q&&!G.answered&&G.curConceptId===concept.id){
-        _currentAIQuestion=q;
-        // NUNCA atualizar durante boss fight
-        if(_inBossFight) return;
-        // NUNCA substituir questão V/F (2 opções) — formato específico
-        const originalQ=concept&&concept.questions[G.curQIdx];
-        if(originalQ&&originalQ.opts&&originalQ.opts.length<=2) return;
-        // Esperar mínimo 4s após exibição para não interferir com toque do usuário
-        const elapsed=Date.now()-G.questionStartTime;
-        const delay=Math.max(0,4000-elapsed);
-        const savedConceptId=concept.id;
-        setTimeout(()=>{
-          if(G.answered||_inBossFight||G.curConceptId!==savedConceptId) return;
-          const qEl=document.getElementById('flow-q-txt');
-          const optsEl=document.getElementById('opts');
-          if(qEl&&optsEl&&!G.answered){
-            const sh=[0,1,2,3];
-            for(let i=sh.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sh[i],sh[j]]=[sh[j],sh[i]];}
-            const cm=sh.indexOf(q.c);
-            _shuffled=sh; _correctMapped=cm;
-            qEl.textContent=q.txt;
-            optsEl.innerHTML=sh.map((origIdx,pos)=>`<button class="opt-flow" id="opt${pos}" onclick="answerQ(${pos},${cm})">${q.opts[origIdx]}</button>`).join('');
-            _lastQText=q.txt;
-          }
-        },delay);
-      }
-    }).catch(()=>{ _aiQGenerating=false; });
+      if(G.answered) generateAIQuestion(concept).then(q=>{if(q)_currentAIQuestion=q;}).catch(()=>{});
+    },9000);
   }
 }
 
+
 function renderQuestion(isRetry){
+  G.answered=false; // SEMPRE resetar — evita questão travada por estado corrompido
   clearTInterval();
   // REGRA ABSOLUTA: marcar questão como vista ao exibir (jamais repetir se acertada)
   if(!isRetry){
