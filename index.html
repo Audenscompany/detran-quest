@@ -260,6 +260,13 @@ body.theme-arcade_fight .play-btn,body.theme-arcade_fight .login-title{text-shad
 .sc-send:disabled{opacity:.35;cursor:default;}
 .sc-footer{font-size:10px;color:var(--mu);text-align:center;margin-top:6px;}
 .sc-footer a{color:var(--pu2);cursor:pointer;font-weight:700;}
+/* ═══ SKIP MENU ═══ */
+.skip-fab{position:fixed;bottom:90px;right:18px;background:rgba(30,24,50,.85);border:1px solid var(--brd);border-radius:99px;padding:7px 13px;font-size:12px;font-weight:800;color:var(--mu);cursor:pointer;z-index:80;backdrop-filter:blur(6px);letter-spacing:.3px;}
+.skip-fab:active{transform:scale(.95);}
+.skip-menu{position:fixed;bottom:140px;right:14px;background:var(--c1);border:1px solid var(--brd);border-radius:16px;padding:10px 8px;z-index:90;display:flex;flex-direction:column;gap:6px;min-width:160px;box-shadow:0 8px 24px rgba(0,0,0,.5);}
+.skip-menu-btn{background:var(--c2);border:1px solid var(--brd);border-radius:10px;padding:10px 14px;font-size:13px;font-weight:700;color:var(--tx);cursor:pointer;text-align:left;}
+.skip-menu-btn:active{border-color:var(--pu);background:var(--c3);}
+.skip-menu-title{font-size:10px;font-weight:800;color:var(--mu);text-transform:uppercase;padding:2px 6px 4px;}
 
 /* ═══ PANEL (⚙️) ═══ */
 .panel-modal{background:var(--c1);border:1px solid var(--brd2);border-radius:22px 22px 0 0;padding:1.5rem 1.25rem 2rem;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;}
@@ -8617,6 +8624,16 @@ function renderQuestion(isRetry){
   <div id="opts">${sh.map((origIdx,pos)=>`<button class="opt-flow" id="opt${pos}" onclick="answerQ(${pos},${cm})">${Q.opts[origIdx]}</button>`).join('')}</div>
   <div id="fb" class="hide"></div>
 </div>`;
+  // Botão flutuante de pular (acima do Sensei)
+  let _skipFab=document.getElementById('skip-fab');
+  if(!_skipFab){
+    _skipFab=document.createElement('button');
+    _skipFab.id='skip-fab';
+    _skipFab.className='skip-fab';
+    _skipFab.textContent='⏭ Pular';
+    _skipFab.onclick=toggleSkipMenu;
+    document.body.appendChild(_skipFab);
+  } else { _skipFab.classList.remove('hide'); }
   startTimer(Q,cm);
 }
 
@@ -9426,6 +9443,57 @@ function scAnswerQuiz(pos,correct){
   });
 }
 
+// ═══ SKIP / PULAR QUESTÕES ═══
+function skipNQuestions(n){
+  closeSkipMenu();
+  let skipped=0;
+  for(let i=0;i<n;i++){
+    const cId=getNextConceptId();
+    if(!cId) break;
+    const key=cId+'_0';
+    if(!G.seenQKeys.includes(key)) G.seenQKeys.push(key);
+    // Registra um attempt mínimo para o conceito não ficar órfão
+    if(!G.concepts[cId]) G.concepts[cId]={attempts:0,timesRight:0,timesWrong:0,status:'novo',lastAttemptAt:null,dueAtQuestionCount:null,reviewStage:0};
+    G.concepts[cId].attempts=(G.concepts[cId].attempts||0)+1;
+    G.curConceptId=cId;
+    skipped++;
+  }
+  saveGame();
+  showToast('⏭ '+skipped+' questão'+(skipped!==1?'ões':'')+' pulada'+(skipped!==1?'s':'')+'. Continuando...');
+  setTimeout(()=>nextStep(),400);
+}
+
+let _skipMenuOpen=false;
+function toggleSkipMenu(){
+  _skipMenuOpen?closeSkipMenu():openSkipMenu();
+}
+function openSkipMenu(){
+  closeSkipMenu();
+  _skipMenuOpen=true;
+  const menu=document.createElement('div');
+  menu.id='skip-menu';
+  menu.className='skip-menu';
+  menu.innerHTML=`
+    <div class="skip-menu-title">⏭ Quantas pular?</div>
+    <button class="skip-menu-btn" onclick="skipNQuestions(1)">Pular 1 questão</button>
+    <button class="skip-menu-btn" onclick="skipNQuestions(5)">Pular 5 questões</button>
+    <button class="skip-menu-btn" onclick="skipNQuestions(10)">Pular 10 questões</button>
+    <button class="skip-menu-btn" onclick="skipNQuestions(20)">Pular 20 questões</button>
+    <button class="skip-menu-btn" onclick="skipNQuestions(50)">Pular 50 questões</button>
+  `;
+  document.body.appendChild(menu);
+  // Fechar ao tocar fora
+  setTimeout(()=>document.addEventListener('touchstart',_closeSkipOnOutside,{once:true}),100);
+}
+function _closeSkipOnOutside(e){
+  const menu=document.getElementById('skip-menu');
+  if(menu && !menu.contains(e.target) && e.target.id!=='skip-fab') closeSkipMenu();
+}
+function closeSkipMenu(){
+  _skipMenuOpen=false;
+  document.getElementById('skip-menu')?.remove();
+}
+
 // ── Executa ação de jogo emitida pelo Sensei ──
 function executeSenseiAction(action){
   const act=action.toUpperCase().trim();
@@ -9457,10 +9525,44 @@ function executeSenseiAction(action){
       closeSensei();
       const unseen=CONCEPTS.filter(c=>c.topic===topicKey&&!G.seenQKeys.includes(c.id+'_0'));
       const pool=unseen.length>0?unseen:CONCEPTS.filter(c=>c.topic===topicKey);
-      if(pool.length>0){
-        _smartQueue=pool.map(c=>c.id);
-        nextStep();
-      } else showToast('Matéria não encontrada: '+topicKey);
+      if(pool.length>0){ _smartQueue=pool.map(c=>c.id); nextStep(); }
+      else showToast('Matéria não encontrada: '+topicKey);
+    } else if(act.startsWith('PULAR_N:')){
+      const n=parseInt(act.split(':')[1])||1;
+      closeSensei(); skipNQuestions(n);
+    } else if(act==='PULAR_1'){ closeSensei(); skipNQuestions(1);
+    } else if(act==='PULAR_5'){ closeSensei(); skipNQuestions(5);
+    } else if(act==='PULAR_10'){ closeSensei(); skipNQuestions(10);
+    } else if(act==='PULAR_20'){ closeSensei(); skipNQuestions(20);
+    } else if(act==='PULAR_50'){ closeSensei(); skipNQuestions(50);
+    } else if(act.startsWith('DOMINAR:')){
+      // Marca todos os conceitos de um tópico como dominados
+      const topicKey=act.split(':')[1].toLowerCase();
+      closeSensei();
+      let count=0;
+      CONCEPTS.filter(c=>c.topic===topicKey).forEach(c=>{
+        if(!G.concepts[c.id]) G.concepts[c.id]={attempts:1,timesRight:3,timesWrong:0,status:'dominado',lastAttemptAt:Date.now(),dueAtQuestionCount:null,reviewStage:3};
+        else { G.concepts[c.id].status='dominado'; G.concepts[c.id].timesRight=Math.max(G.concepts[c.id].timesRight||0,3); }
+        const key=c.id+'_0'; if(!G.seenQKeys.includes(key)) G.seenQKeys.push(key);
+        count++;
+      });
+      saveGame(); showToast('✅ '+count+' conceitos de '+topicKey+' marcados como dominados');
+      nextStep();
+    } else if(act==='MARCAR_DOMINADO'||act==='DOMINADO'){
+      // Marca conceito atual como dominado
+      if(G.curConceptId){
+        if(!G.concepts[G.curConceptId]) G.concepts[G.curConceptId]={attempts:1,timesRight:3,timesWrong:0,status:'dominado',lastAttemptAt:Date.now(),dueAtQuestionCount:null,reviewStage:3};
+        else G.concepts[G.curConceptId].status='dominado';
+        saveGame(); showToast('✅ Conceito marcado como dominado');
+        closeSensei(); afterQuestionFlow();
+      }
+    } else if(act==='RESETAR'||act==='RESET'){
+      // Reseta apenas seenQKeys para recomeçar sem perder XP/nível
+      G.seenQKeys=[]; saveGame(); closeSensei(); showToast('🔄 Questões resetadas — você vai ver tudo de novo'); nextStep();
+    } else if(act==='RESETAR_TUDO'||act==='RESET_TUDO'){
+      if(confirm('Tem certeza? Isso apaga TODO seu progresso.')){
+        G=freshState(); saveGame(); closeSensei(); nextStep();
+      }
     }
   },350);
 }
@@ -9468,14 +9570,26 @@ function executeSenseiAction(action){
 // ── Detecção local de comandos (sem API key) ──
 function detectLocalSenseiCommand(text){
   const t=text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
-  if(/pul(a|ar)|proxim|avanc|next|skip/.test(t)) return 'PULAR';
+  // Pular N questões — detecta número específico
+  const skipMatch=t.match(/pul[ae]r?\s+(\d+)|skip\s+(\d+)|(\d+)\s+questoes?/);
+  if(skipMatch){const n=parseInt(skipMatch[1]||skipMatch[2]||skipMatch[3]);return 'PULAR_N:'+n;}
+  if(/pul(a|ar)|proxim|avanc|next|skip/.test(t)) return 'PULAR_1';
+  if(/simulado real|prova oficial/.test(t)) return 'SIMULADO_REAL';
   if(/simulad/.test(t)) return 'SIMULADO';
   if(/progress|estatistic|resultado|resumo geral|painel/.test(t)) return 'PROGRESSO';
   if(/fech(a|ar)|sai(r|)|volta(r)? ao jogo/.test(t)) return 'FECHAR';
   if(/repet|de novo|mesm|outra vez/.test(t)) return 'REPETIR';
   if(/sprint|ponto(s)? frac/.test(t)) return 'SPRINT_ERROS';
-  if(/erro(s)?|revis(a|ao|ão)/.test(t)) return 'REVISAO_ERROS';
-  // Tópicos por nome
+  if(/erro(s)?|revis/.test(t)) return 'REVISAO_ERROS';
+  if(/domina|ja sei|já sei|conclui|concluir|marcar como (feito|dominado|concluido)/.test(t)) return 'MARCAR_DOMINADO';
+  if(/reset(a|ar)? tudo|apaga tudo|recomecar tudo/.test(t)) return 'RESETAR_TUDO';
+  if(/reset(a|ar)?|recomecar|recomeç/.test(t)) return 'RESETAR';
+  // Dominar tópico inteiro
+  const topicDomMap={'legisla':'lei','infra':'lei','defensiv':'def','plac':'pla','socorro':'soc','mecanic':'mec','ambient':'amb','cidadan':'cid','pedes':'ped','ciclist':'cic','emergenc':'emerg','document':'doc'};
+  for(const [k,v] of Object.entries(topicDomMap)){
+    if(t.includes(k) && /domina|ja sei|já sei|pula tudo/.test(t)) return 'DOMINAR:'+v;
+  }
+  // Ir para tópico
   const topicMap={'legisla':'lei','infra':'lei','cnh':'lei','defensiv':'def','plac':'pla','socorro':'soc','mecanic':'mec','ambient':'amb','cidadan':'cid','pedes':'ped','ciclist':'cic','emergenc':'emerg','document':'doc'};
   for(const [k,v] of Object.entries(topicMap)){ if(t.includes(k)) return 'TOPICO:'+v; }
   return null;
@@ -9515,8 +9629,25 @@ Ações disponíveis:
 [AÇÃO: TOPICO:cic] → vai para Ciclistas
 [AÇÃO: TOPICO:emerg] → vai para Veículos de Emergência
 [AÇÃO: TOPICO:doc] → vai para Documentação
+[AÇÃO: PULAR_N:5] → pula 5 questões (substitua 5 pelo número pedido)
+[AÇÃO: PULAR_1] / [AÇÃO: PULAR_5] / [AÇÃO: PULAR_10] / [AÇÃO: PULAR_20] / [AÇÃO: PULAR_50]
+[AÇÃO: DOMINAR:lei] → marca TODOS os conceitos de legislação como dominados (use o código do tópico)
+[AÇÃO: MARCAR_DOMINADO] → marca o conceito ATUAL como dominado e avança
+[AÇÃO: RESETAR] → reseta as questões vistas para recomeçar sem perder XP
+[AÇÃO: RESETAR_TUDO] → apaga TODO o progresso (pedir confirmação antes de emitir)
 
-Emita o comando SOMENTE quando o aluno pedir uma ação de navegação. Para dúvidas de conteúdo, responda normalmente sem nenhum comando.`;
+CONTROLE TOTAL: O aluno pode pedir QUALQUER coisa em linguagem natural e você DEVE executar.
+Exemplos:
+- "pula 15 questões" → [AÇÃO: PULAR_N:15]
+- "já sei legislação" / "domina legislação" → [AÇÃO: DOMINAR:lei]
+- "marca essa como concluída" → [AÇÃO: MARCAR_DOMINADO]
+- "vai para mecânica" → [AÇÃO: TOPICO:mec]
+- "quero fazer simulado" → [AÇÃO: SIMULADO]
+- "pula essa" → [AÇÃO: PULAR_1]
+- "recomeça as questões" → [AÇÃO: RESETAR]
+
+Se o aluno pedir algo que você pode executar, EXECUTE via [AÇÃO:] sem questionar.
+Para dúvidas de CONTEÚDO (explicações, macetes), responda normalmente sem ação.`;
 
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{
