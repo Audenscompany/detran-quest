@@ -8359,6 +8359,8 @@ function answerComplete(pos,correct){
 // TRUE_FALSE
 // ───────────────────────────────────────────────
 function renderTrueFalse(step){
+  // Limpar timeout anterior de segurança
+  if(window._tfSafetyTimer) clearTimeout(window._tfSafetyTimer);
   document.getElementById('game-area').innerHTML=`
 <div class="flow-card learn-flow">
   <div class="flow-tag">✅❌ Verdadeiro ou falso</div>
@@ -8368,13 +8370,28 @@ function renderTrueFalse(step){
     <button class="opt-flow tf-btn" onclick="answerTrueFalse(false,${step.correct})">Falso</button>
   </div>
 </div>`;
+  // Safety net: se ficou 30s sem resposta, avança automaticamente
+  window._tfSafetyTimer=setTimeout(()=>{
+    const btns=document.querySelectorAll('.tf-btn');
+    if(btns.length>0&&!btns[0].disabled){ // ainda na mesma tela
+      try{ advanceLearningStep(); }catch(e){ try{ nextStep(); }catch(_){} }
+    }
+  },30000);
 }
 function answerTrueFalse(answer,correct){
-  const ok=answer===correct;
-  document.querySelectorAll('.tf-btn').forEach(b=>b.disabled=true);
-  if(_stepProgress[_learningConceptId]) _stepProgress[_learningConceptId].microTest=true;
-  if(ok) addXP(10,false);
-  setTimeout(()=>{ ok?advanceLearningStep():renderLearningStep(); }, ok?600:900);
+  try{
+    const ok=answer===correct;
+    document.querySelectorAll('.tf-btn').forEach(b=>b.disabled=true);
+    try{ if(_stepProgress&&_stepProgress[_learningConceptId]) _stepProgress[_learningConceptId].microTest=true; }catch(e){}
+    try{ if(ok) addXP(10,false); }catch(e){}
+    setTimeout(()=>{
+      try{ ok?advanceLearningStep():renderLearningStep(); }catch(e){ advanceLearningStep(); }
+    }, ok?600:900);
+  }catch(e){
+    // Qualquer erro: forçar avanço para não travar
+    try{ document.querySelectorAll('.tf-btn').forEach(b=>b.disabled=true); }catch(_){}
+    setTimeout(advanceLearningStep,800);
+  }
 }
 
 // ───────────────────────────────────────────────
