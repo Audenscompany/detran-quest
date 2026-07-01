@@ -9254,9 +9254,7 @@ function scRemoveKey(){
 }
 
 function setupSenseiKey(){
-  const k=(prompt('Cole sua chave da API Anthropic (começa com sk-ant-):
-
-Ela fica salva só neste dispositivo, nunca vai para nenhum servidor nosso.')||"").trim();
+  const k=(prompt('Cole sua chave da API Anthropic (começa com sk-ant-):\n\nEla fica salva só neste dispositivo, nunca vai para nenhum servidor nosso.')||'').trim();
   if(!k) return;
   if(k.startsWith('sk-ant-')||k.startsWith('sk-')){
     localStorage.setItem('dq_anthropic_key',k);
