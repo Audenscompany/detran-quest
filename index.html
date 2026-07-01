@@ -8141,6 +8141,16 @@ let _learningConceptId=null;
 let _stepProgress={}; // por conceito: quais tipos de step já foram cumpridos nesta passada
 
 function startLearningFlow(conceptId){
+  // REGRA: conceito já estudado antes → pula ensino, vai direto para a questão
+  // Evita repetir micro_info, true_false e outros steps de ensino que o aluno já viu
+  const _c=G.concepts[conceptId];
+  const alreadyStudied=_c&&_c.attempts>0&&G.seenQKeys&&G.seenQKeys.includes(conceptId+'_0');
+  if(alreadyStudied){
+    G.curConceptId=conceptId;
+    goQuestion();
+    return;
+  }
+
   // Registrar no histórico recente (anti-loop — máx 3)
   _recentConcepts=_recentConcepts.filter(id=>id!==conceptId);
   _recentConcepts.push(conceptId);
@@ -8151,9 +8161,9 @@ function startLearningFlow(conceptId){
   _learningConceptId=conceptId;
   _stepProgress[conceptId]={discovery:false,microTest:false,practiced:false};
 
-  const steps=concept.learningSteps && concept.learningSteps.length>0
+  const steps=concept.learningSteps&&concept.learningSteps.length>0
     ? concept.learningSteps
-    : buildFallbackSteps(concept); // segurança: conceitos sem learningSteps ainda funcionam
+    : buildFallbackSteps(concept);
 
   _stepQueue=steps;
   _stepIdx=0;
