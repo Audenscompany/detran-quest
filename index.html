@@ -7001,12 +7001,16 @@ function normalizeSaveData(oldSave,email){
   merged.sessionHistory=merged.sessionHistory||[];
   merged.studyTimeByTopic=merged.studyTimeByTopic||Object.fromEntries(ALL_TOPICS.map(t=>[t,0]));
   // REGRA ABSOLUTA anti-repetição: reconstrói seenQKeys a partir do histórico existente
-  // se o campo não existia no save (usuário que atualizou de versão antiga).
   if(!merged.seenQKeys||merged.seenQKeys.length===0){
     merged.seenQKeys=CONCEPTS
       .filter(c=>merged.concepts[c.id]&&merged.concepts[c.id].attempts>0)
       .map(c=>c.id+'_0');
   }
+  // Garantir campos novos existam (saves antigos)
+  if(!merged.reactionTimes||typeof merged.reactionTimes!=='object') merged.reactionTimes={};
+  if(!merged.weaknessScore||typeof merged.weaknessScore!=='object') merged.weaknessScore={};
+  if(typeof merged.adhdMode!=='boolean') merged.adhdMode=true;
+  if(typeof merged.examTomorrow!=='boolean') merged.examTomorrow=false;
   return merged;
 }
 
@@ -7982,11 +7986,13 @@ function isReviewDue(c,qCount){
 // errado nada) foi removida — a repetição espaçada agora nasce do desempenho
 // real no simulado, nunca de um relógio interno.
 function getWeaknessScoreFor(id){
-  if(!G.weaknessScore||!G.weaknessScore[id]) return 0;
-  return G.weaknessScore[id];
+  try{ if(!G.weaknessScore||!G.weaknessScore[id]) return 0; return G.weaknessScore[id]; }catch(e){ return 0; }
 }
 
 function getNextConceptId(){
+  try{
+  if(!G.weaknessScore) G.weaknessScore={};
+  if(!G.seenQKeys) G.seenQKeys=[];
   ensureConceptIntegrity();
   const qCount=G.totalQ;
   const seenCorrectly=(id)=>G.seenQKeys.includes(id+'_0')&&!G.errorBank.find(e=>e.conceptId===id);
@@ -8031,6 +8037,7 @@ function getNextConceptId(){
   if(weakest&&!seenCorrectly(weakest)) return weakest;
 
   return null;
+  }catch(e){ console.error('getNextConceptId error:',e); return CONCEPTS.find(c=>G.concepts[c.id].attempts===0)?.id||null; }
 }
 
 
@@ -8921,16 +8928,17 @@ function processAnswer(ok,elapsedSec,wasGuess){
   c.status=conceptStatus(c);
   markPracticed(concept.id,ok);
   // ── Tracking de tempo de reação (algoritmo TDAH + priorização) ──
-  if(!G.reactionTimes) G.reactionTimes={};
-  if(!G.reactionTimes[concept.id]) G.reactionTimes[concept.id]=[];
-  G.reactionTimes[concept.id].push(Math.round(elapsedSec*1000));
-  if(G.reactionTimes[concept.id].length>5) G.reactionTimes[concept.id].shift(); // mantém só últimas 5
-  // ── WeaknessScore: combinação de erro + lentidão (base do algoritmo) ──
-  if(!G.weaknessScore) G.weaknessScore={};
-  const avgReact=G.reactionTimes[concept.id].reduce((a,b)=>a+b,0)/G.reactionTimes[concept.id].length;
-  const errorRate=c.timesWrong/Math.max(c.attempts,1);
-  const slownessPenalty=Math.min(1, Math.max(0,(avgReact-8000)/22000)); // 0=rápido, 1=muito lento
-  G.weaknessScore[concept.id]=Math.round((errorRate*0.65 + slownessPenalty*0.35)*100);
+  try{
+    if(!G.reactionTimes) G.reactionTimes={};
+    if(!G.reactionTimes[concept.id]) G.reactionTimes[concept.id]=[];
+    G.reactionTimes[concept.id].push(Math.round(elapsedSec*1000));
+    if(G.reactionTimes[concept.id].length>5) G.reactionTimes[concept.id].shift();
+    if(!G.weaknessScore) G.weaknessScore={};
+    const avgReact=G.reactionTimes[concept.id].reduce((a,b)=>a+b,0)/G.reactionTimes[concept.id].length;
+    const errorRate=c.timesWrong/Math.max(c.attempts,1);
+    const slownessPenalty=Math.min(1,Math.max(0,(avgReact-8000)/22000));
+    G.weaknessScore[concept.id]=Math.round((errorRate*0.65+slownessPenalty*0.35)*100);
+  }catch(e){ console.warn('reactionTime tracking error:',e); }
 
   G.totalQ++;
   G.questionsAnswered++;
