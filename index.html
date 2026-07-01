@@ -7413,7 +7413,17 @@ async function enterGame(){
     checkDailyReset();
     startUpdateChecker();
     checkReturnReminder();
-    if(hadSave && G.totalQ>0){
+    // Retomar questão interrompida por atualização
+    const resumeConcept=localStorage.getItem('dq_resume_concept');
+    const resumeMidQ=localStorage.getItem('dq_resume_mid_question');
+    localStorage.removeItem('dq_resume_concept');
+    localStorage.removeItem('dq_resume_mid_question');
+    if(resumeConcept && hadSave){
+      buildAppShell();
+      G.curConceptId=resumeConcept;
+      if(resumeMidQ) goQuestion();
+      else startLearningFlow(resumeConcept);
+    } else if(hadSave && G.totalQ>0){
       renderContinueScreen();
     } else {
       buildAppShell();
@@ -7805,7 +7815,12 @@ function getConceptById(id){ return CONCEPTS.find(c=>c.id===id); }
 // ═══════════════════════════════════════════════════════════════
 function isConceptEligibleForSim(conceptId){
   const c=G.concepts[conceptId];
-  return !!(c && c.status==='dominado');
+  if(!c) return false;
+  // Elegível: dominado OU já visto e tentado (seenQKeys)
+  // Isso garante que o simulado só cobra o que o aluno já estudou
+  const alreadySeen=G.seenQKeys&&G.seenQKeys.includes(conceptId+'_0');
+  const attempted=c.attempts>0;
+  return (c.status==='dominado')||(alreadySeen&&attempted);
 }
 
 function markSeenTeach(conceptId){
@@ -9354,17 +9369,41 @@ function professorNextAction(g){
 // ═══ SENSEI CHAT ═══
 let _senseiHistory=[];
 
+const SENSEI_MEMORY_KEY='dq_sensei_memory';
+const SENSEI_MEMORY_MAX=40; // máximo de mensagens salvas
+
+function saveSenseiMemory(){
+  try{ localStorage.setItem(SENSEI_MEMORY_KEY,JSON.stringify(_senseiHistory.slice(-SENSEI_MEMORY_MAX))); }catch(e){}
+}
+function loadSenseiMemory(){
+  try{
+    const raw=localStorage.getItem(SENSEI_MEMORY_KEY);
+    if(raw) return JSON.parse(raw);
+  }catch(e){}
+  return [];
+}
+
 function openSensei(){
   const conceptId=G.curConceptId||getNextConceptId();
   const concept=getConceptById(conceptId);
-  _senseiHistory=[];
   checkForUpdates(); // verifica atualizações ao abrir o Sensei
   document.getElementById('sensei-overlay').classList.remove('hide');
   document.getElementById('sensei-context').textContent=concept?concept.name:'';
   const chat=document.getElementById('sc-chat');
   chat.innerHTML='';
-  const hasKey=!!localStorage.getItem('dq_anthropic_key');
-  scAppendBubble('ai','👋 Olá! Pode me perguntar qualquer coisa sobre '+(concept?'<b>'+concept.name+'</b>':'CNH')+'. Ou use os atalhos rápidos abaixo.');
+  // Carregar histórico salvo
+  _senseiHistory=loadSenseiMemory();
+  if(_senseiHistory.length>0){
+    // Mostrar últimas mensagens do histórico
+    _senseiHistory.forEach(msg=>{
+      if(msg.role==='user'||msg.role==='assistant'){
+        scAppendBubble(msg.role==='user'?'user':'ai',msg.content);
+      }
+    });
+    scAppendBubble('ai','📍 Conceito agora: <b>'+(concept?concept.name:'CNH')+'</b>');
+  } else {
+    scAppendBubble('ai','👋 Olá! Pode me perguntar qualquer coisa sobre '+(concept?'<b>'+concept.name+'</b>':'CNH')+'. Ou use os atalhos rápidos abaixo.');
+  }
   scUpdateFooter();
 }
 
@@ -9492,6 +9531,7 @@ async function sendSenseiChat(text,localIntent){
   document.getElementById('sc-typing-ind')?.remove();
   _senseiHistory.push({role:'assistant',content:responseText});
   scAppendBubble('ai',responseText);
+  saveSenseiMemory(); // persistir histórico
   scSetSending(false);
 }
 
@@ -9681,6 +9721,9 @@ function showUpdateFab(sha, msg){
 async function applyUpdate(sha){
   const fab=document.getElementById('dq-update-fab');
   if(fab) fab.textContent='⏳ Atualizando...';
+  // Salvar posição atual para retomar depois da atualização
+  if(G.curConceptId) localStorage.setItem('dq_resume_concept',G.curConceptId);
+  if(G.answered===false) localStorage.setItem('dq_resume_mid_question','1');
   // Salvar progresso antes de qualquer coisa
   saveGame();
   await saveToCacheAPI(getStableSaveKey(CURRENT_USER_EMAIL),G);
