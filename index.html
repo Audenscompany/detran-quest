@@ -9323,9 +9323,16 @@ function openSensei(){
 function closeSensei(){document.getElementById('sensei-overlay').classList.add('hide');}
 
 function scUpdateFooter(){
-  const hasKey=!!localStorage.getItem('dq_anthropic_key');
+  const hasApiKey=!!localStorage.getItem('dq_anthropic_key');
+  const hasGHPat=!!localStorage.getItem(DQ_GH_PAT);
   const f=document.getElementById('sc-footer');
-  if(f) f.innerHTML=hasKey?'🤖 IA ativa · <a onclick="scRemoveKey()">Remover chave</a>':'<a onclick="setupSenseiKey()">🔑 Configurar IA (Anthropic API)</a> para respostas livres';
+  if(!f) return;
+  let lines=[];
+  if(hasApiKey) lines.push('🤖 IA ativa · <a onclick="scRemoveKey()">Remover chave</a>');
+  else lines.push('<a onclick="setupSenseiKey()">🔑 Configurar IA Anthropic</a>');
+  if(hasGHPat) lines.push('📬 Pedidos ativos · <a onclick="localStorage.removeItem(DQ_GH_PAT);scUpdateFooter()">Remover PAT</a>');
+  else lines.push('<a onclick="setupGHPat()">📬 Configurar envio de pedidos (GitHub PAT)</a>');
+  f.innerHTML=lines.join('&nbsp;·&nbsp;');
 }
 
 function scRemoveKey(){
