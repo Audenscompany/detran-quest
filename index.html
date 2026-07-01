@@ -7127,6 +7127,7 @@ function migrateSaveIfNeeded(email){
 // LOAD — usa migração estável; nunca cria save novo se já existe progresso
 // ───────────────────────────────────────────────
 async function loadGame(){
+  try{
   let result=migrateSaveIfNeeded(CURRENT_USER_EMAIL);
   // localStorage vazio? Tentar Cache API (iOS pode ter limpado o localStorage)
   if((result.isNew || !result.data) && CURRENT_USER_EMAIL){
@@ -7169,6 +7170,12 @@ async function loadGame(){
   }
   saveGame(); // garante que a chave estável sempre reflita o estado mais atual já normalizado
   return true;
+  }catch(e){
+    console.error('loadGame error:',e);
+    // Tentar salvar o erro para diagnóstico
+    try{ localStorage.setItem('dq_last_load_error',String(e)); }catch(_){}
+    return false; // trata como sem save — jogo começa do zero de forma segura
+  }
 }
 
 // ───────────────────────────────────────────────
@@ -7424,17 +7431,10 @@ async function enterGame(){
     checkDailyReset();
     startUpdateChecker();
     checkReturnReminder();
-    // Retomar questão interrompida por atualização
-    const resumeConcept=localStorage.getItem('dq_resume_concept');
-    const resumeMidQ=localStorage.getItem('dq_resume_mid_question');
+    // Limpar flags de resume (eram problemáticas pós-update)
     localStorage.removeItem('dq_resume_concept');
     localStorage.removeItem('dq_resume_mid_question');
-    if(resumeConcept && hadSave){
-      buildAppShell();
-      G.curConceptId=resumeConcept;
-      if(resumeMidQ) goQuestion();
-      else startLearningFlow(resumeConcept);
-    } else if(hadSave && G.totalQ>0){
+    if(hadSave && G.totalQ>0){
       renderContinueScreen();
     } else {
       buildAppShell();
@@ -9800,9 +9800,6 @@ function showUpdateFab(sha, msg){
 async function applyUpdate(sha){
   const fab=document.getElementById('dq-update-fab');
   if(fab) fab.textContent='⏳ Atualizando...';
-  // Salvar posição atual para retomar depois da atualização
-  if(G.curConceptId) localStorage.setItem('dq_resume_concept',G.curConceptId);
-  if(G.answered===false) localStorage.setItem('dq_resume_mid_question','1');
   // Salvar progresso antes de qualquer coisa
   saveGame();
   await saveToCacheAPI(getStableSaveKey(CURRENT_USER_EMAIL),G);
