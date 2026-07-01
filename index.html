@@ -6916,7 +6916,7 @@ function freshState(){
     sessionHistory:[], // [{date, questionsAnswered, durationMs}]
     reactionTimes:{}, // conceptId → [ms, ms, ms] últimas 5 reações
     adhdMode:true, // modo TDAH ativo por padrão
-    examTomorrow:false, // modo emergência ativado pelo usuário
+    examTomorrow:true, // modo emergência — ligado por padrão
     weaknessScore:{}, // conceptId → score composto (erros + reação lenta)
     bossesDefeated:[], // topics com 1ª vitória (badge)
     bossWave:{}, // quantas ondas de chefão já venceu, por tópico
@@ -8763,19 +8763,7 @@ function renderQuestion(isRetry){
     _skipFab.onclick=toggleSkipMenu;
     document.body.appendChild(_skipFab);
   } else { _skipFab.classList.remove('hide'); }
-  // Botão Exame Amanhã
-  let _examFab=document.getElementById('exam-fab');
-  if(!_examFab){
-    _examFab=document.createElement('button');
-    _examFab.id='exam-fab';
-    _examFab.className='exam-fab'+(G.examTomorrow?' active':'');
-    _examFab.textContent=G.examTomorrow?'🚨 Modo Exame ON':'🚨 Exame Amanhã';
-    _examFab.onclick=toggleExamMode;
-    document.body.appendChild(_examFab);
-  } else {
-    _examFab.className='exam-fab'+(G.examTomorrow?' active':'');
-    _examFab.textContent=G.examTomorrow?'🚨 Modo Exame ON':'🚨 Exame Amanhã';
-  }
+  // Exame Amanhã gerenciado nas Config (⚙️)
   startTimer(Q,cm);
 }
 
@@ -10334,6 +10322,22 @@ ${CONCEPTS.map(c=>{
   <button class="audio-toggle-switch ${st.silentMode?'on':''}" onclick="toggleSilentMode()"></button>
 </div>
 <div class="audio-disclaimer">Música/frequência de foco opcional — não é um tratamento médico nem promete efeito garantido. Use se isso te ajuda a manter o ritmo de estudo.</div>
+
+<div class="panel-section-title">🚨 Modo de Estudo</div>
+<div class="audio-setting-row">
+  <div>
+    <div class="audio-setting-label">🚨 Modo Exame Amanhã</div>
+    <div class="audio-setting-sub">Prioriza seus pontos mais fracos — erros e lentidão primeiro</div>
+  </div>
+  <button class="audio-toggle-switch ${G.examTomorrow?'on':''}" onclick="G.examTomorrow=!G.examTomorrow;saveGame();refreshConfigTabIfOpen();showToast(G.examTomorrow?'🚨 Modo Exame ativado!':'Modo normal ativado')"></button>
+</div>
+<div class="audio-setting-row">
+  <div>
+    <div class="audio-setting-label">🧠 Modo TDAH</div>
+    <div class="audio-setting-sub">Feedbacks adaptados ao seu tempo de reação e padrão de aprendizado</div>
+  </div>
+  <button class="audio-toggle-switch ${G.adhdMode?'on':''}" onclick="G.adhdMode=!G.adhdMode;saveGame();refreshConfigTabIfOpen();showToast(G.adhdMode?'🧠 Modo TDAH ativado':'Modo TDAH desativado')"></button>
+</div>
 
 <div class="panel-section-title">🎨 Aparência</div>
 ${renderThemeGrid()}
