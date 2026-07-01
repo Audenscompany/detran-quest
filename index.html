@@ -6996,6 +6996,31 @@ function normalizeSaveData(oldSave,email){
 // ───────────────────────────────────────────────
 // SAVE — grava na chave ESTÁVEL do usuário + cascata de backups
 // ───────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════
+// CACHE API SAVE — backup persistente no iOS (localStorage pode ser
+// apagado pelo iOS entre sessões; Cache API sobrevive mais tempo)
+// ═══════════════════════════════════════════════════════════════
+const SAVE_CACHE_NAME='detran-quest-saves-v1';
+
+async function saveToCacheAPI(key,data){
+  try{
+    if(!('caches' in window)) return;
+    const cache=await caches.open(SAVE_CACHE_NAME);
+    const res=new Response(JSON.stringify(data),{headers:{'Content-Type':'application/json','X-Saved-At':String(Date.now())}});
+    await cache.put('/dq-save/'+encodeURIComponent(key),res);
+  }catch(e){ /* silencioso */ }
+}
+
+async function loadFromCacheAPI(key){
+  try{
+    if(!('caches' in window)) return null;
+    const cache=await caches.open(SAVE_CACHE_NAME);
+    const res=await cache.match('/dq-save/'+encodeURIComponent(key));
+    if(!res) return null;
+    return JSON.parse(await res.text());
+  }catch(e){ return null; }
+}
+
 function saveGame(){
   try{
     G.lastSaveAt=Date.now();
@@ -7009,6 +7034,8 @@ function saveGame(){
       localStorage.setItem(getBackupKey(CURRENT_USER_EMAIL),prevCurrent);
     }
     localStorage.setItem(key,json);
+    // Backup no Cache API (mais persistente no iOS PWA)
+    saveToCacheAPI(key,G);
     return true;
   }catch(e){
     console.error('save failed',e);
@@ -7057,6 +7084,9 @@ function migrateSaveIfNeeded(email){
       }
     }catch(e){ continue; }
   }
+  // Nada no localStorage: tentar Cache API (backup persistente iOS)
+  // Isso é assíncrono, então usamos um caminho síncrono de fallback —
+  // loadFromCacheAPI será chamado separadamente em loadGame via async path.
   // Procurar saves de versões anteriores deste jogo
   const legacy=findLegacySave(email);
   if(legacy){
@@ -7075,8 +7105,19 @@ function migrateSaveIfNeeded(email){
 // ───────────────────────────────────────────────
 // LOAD — usa migração estável; nunca cria save novo se já existe progresso
 // ───────────────────────────────────────────────
-function loadGame(){
-  const result=migrateSaveIfNeeded(CURRENT_USER_EMAIL);
+async function loadGame(){
+  let result=migrateSaveIfNeeded(CURRENT_USER_EMAIL);
+  // localStorage vazio? Tentar Cache API (iOS pode ter limpado o localStorage)
+  if((result.isNew || !result.data) && CURRENT_USER_EMAIL){
+    const stableKey=getStableSaveKey(CURRENT_USER_EMAIL);
+    const cached=await loadFromCacheAPI(stableKey);
+    if(cached && isValidSave(cached)){
+      showToast('☁️ Progresso recuperado do backup!');
+      result={data:cached,migrated:false};
+      // Restaurar no localStorage imediatamente
+      try{ localStorage.setItem(stableKey,JSON.stringify(cached)); }catch(e){}
+    }
+  }
   if(result.isNew || !result.data) return false;
 
   // ANTI-PERDA: se a versão do código mudou desde o último save, criar um backup
@@ -7228,7 +7269,7 @@ function setAuthMode(mode){
   err.classList.remove('show'); err.textContent='';
 }
 
-function doSignup(keepConnected){
+async function doSignup(keepConnected){
   const emailEl=document.getElementById('login-email');
   const passEl=document.getElementById('login-pass');
   const confirmEl=document.getElementById('signup-pass-confirm');
@@ -7271,11 +7312,11 @@ function doSignup(keepConnected){
       localStorage.setItem(AUTH_USER_KEY, email);
     }catch(e){}
   }
-  enterGame();
+  await enterGame();
 }
 
 
-function doLogin(keepConnected){
+async function doLogin(keepConnected){
   const emailEl=document.getElementById('login-email');
   const passEl=document.getElementById('login-pass');
   const email=emailEl.value.trim().toLowerCase();
@@ -7292,14 +7333,14 @@ function doLogin(keepConnected){
         localStorage.setItem(AUTH_USER_KEY, email);
       }catch(e){}
     }
-    enterGame();
+    await enterGame();
   } else {
     err.textContent=user?'Senha incorreta.':'Não existe conta com esse e-mail neste aparelho — toque em "Criar conta".';
     err.classList.add('show');
   }
 }
 
-function tryAutoLogin(){
+async function tryAutoLogin(){
   try{
     const token=localStorage.getItem(AUTH_KEY);
     if(!token) return false;
@@ -7316,7 +7357,7 @@ function tryAutoLogin(){
     if(user && token===simpleHash(savedEmail+'|'+user.pass)){
       CURRENT_USER_EMAIL=savedEmail;
       try{ localStorage.setItem(AUTH_USER_KEY,savedEmail); }catch(e){} // grava pra próxima vez já vir direto
-      enterGame();
+      await enterGame();
       return true;
     }
   }catch(e){}
@@ -7330,8 +7371,8 @@ function tryAutoLogin(){
 // script carrega, e qualquer erro em QUALQUER ponto da inicialização cai
 // na tela de recuperação em vez de deixar a tela preta/vazia.
 // ───────────────────────────────────────────────
-function initGame(){
-  const loggedInAutomatically=tryAutoLogin();
+async function initGame(){
+  const loggedInAutomatically=await tryAutoLogin();
   if(!loggedInAutomatically){
     // Sem sessão ativa: a tela de login já é a tela padrão visível do HTML estático,
     // então não precisa fazer nada — ela já está lá. Só garantimos que app-root,
@@ -7351,10 +7392,10 @@ function logout(keepProgress){
   location.reload();
 }
 
-function enterGame(){
+async function enterGame(){
   try{
     G=freshState(); // sempre começa limpo: se loadGame() não achar save, G fica com os defaults corretos, nunca com sobra de uma sessão anterior
-    const hadSave=loadGame();
+    const hadSave=await loadGame();
     document.getElementById('login-screen').classList.add('hide');
     document.getElementById('app-root').classList.remove('hide');
     startAutosave();
