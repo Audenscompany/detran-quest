@@ -8694,20 +8694,29 @@ function goQuestion(){
       _aiQGenerating=false;
       if(q&&!G.answered&&G.curConceptId===concept.id){
         _currentAIQuestion=q;
-        // Atualizar só o texto e opções sem resetar timer
-        // NUNCA atualizar durante boss fight (mesmo id "opts")
+        // NUNCA atualizar durante boss fight
         if(_inBossFight) return;
-        const qEl=document.getElementById('flow-q-txt');
-        const optsEl=document.getElementById('opts');
-        if(qEl&&optsEl&&!G.answered){
-          const sh=[0,1,2,3];
-          for(let i=sh.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sh[i],sh[j]]=[sh[j],sh[i]];}
-          const cm=sh.indexOf(q.c);
-          _shuffled=sh; _correctMapped=cm;
-          qEl.textContent=q.txt;
-          optsEl.innerHTML=sh.map((origIdx,pos)=>`<button class="opt-flow" id="opt${pos}" onclick="answerQ(${pos},${cm})">${q.opts[origIdx]}</button>`).join('');
-          _lastQText=q.txt;
-        }
+        // NUNCA substituir questão V/F (2 opções) — formato específico
+        const originalQ=concept&&concept.questions[G.curQIdx];
+        if(originalQ&&originalQ.opts&&originalQ.opts.length<=2) return;
+        // Esperar mínimo 4s após exibição para não interferir com toque do usuário
+        const elapsed=Date.now()-G.questionStartTime;
+        const delay=Math.max(0,4000-elapsed);
+        const savedConceptId=concept.id;
+        setTimeout(()=>{
+          if(G.answered||_inBossFight||G.curConceptId!==savedConceptId) return;
+          const qEl=document.getElementById('flow-q-txt');
+          const optsEl=document.getElementById('opts');
+          if(qEl&&optsEl&&!G.answered){
+            const sh=[0,1,2,3];
+            for(let i=sh.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sh[i],sh[j]]=[sh[j],sh[i]];}
+            const cm=sh.indexOf(q.c);
+            _shuffled=sh; _correctMapped=cm;
+            qEl.textContent=q.txt;
+            optsEl.innerHTML=sh.map((origIdx,pos)=>`<button class="opt-flow" id="opt${pos}" onclick="answerQ(${pos},${cm})">${q.opts[origIdx]}</button>`).join('');
+            _lastQText=q.txt;
+          }
+        },delay);
       }
     }).catch(()=>{ _aiQGenerating=false; });
   }
