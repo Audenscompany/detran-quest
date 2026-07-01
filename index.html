@@ -260,6 +260,9 @@ body.theme-arcade_fight .play-btn,body.theme-arcade_fight .login-title{text-shad
 .sc-send:disabled{opacity:.35;cursor:default;}
 .sc-footer{font-size:10px;color:var(--mu);text-align:center;margin-top:6px;}
 .sc-footer a{color:var(--pu2);cursor:pointer;font-weight:700;}
+/* ═══ UPDATE BUTTON ═══ */
+.update-fab{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1fa876,#1a6e52);color:#fff;border:none;border-radius:99px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;z-index:200;box-shadow:0 4px 18px rgba(31,168,118,.45);animation:pulseUpdate 2s ease-in-out infinite;white-space:nowrap;}
+@keyframes pulseUpdate{0%,100%{box-shadow:0 4px 18px rgba(31,168,118,.45);}50%{box-shadow:0 4px 28px rgba(31,168,118,.8);}}
 /* ═══ SKIP MENU ═══ */
 .skip-fab{position:fixed;bottom:90px;right:18px;background:rgba(30,24,50,.85);border:1px solid var(--brd);border-radius:99px;padding:7px 13px;font-size:12px;font-weight:800;color:var(--mu);cursor:pointer;z-index:80;backdrop-filter:blur(6px);letter-spacing:.3px;}
 .skip-fab:active{transform:scale(.95);}
@@ -7408,6 +7411,7 @@ async function enterGame(){
     startAutosave();
     startStudyTimeTicker();
     checkDailyReset();
+    startUpdateChecker();
     checkReturnReminder();
     if(hadSave && G.totalQ>0){
       renderContinueScreen();
@@ -9443,6 +9447,115 @@ function scAnswerQuiz(pos,correct){
   });
 }
 
+// ═══════════════════════════════════════════════════════════════
+// SISTEMA DE ATUALIZAÇÃO AUTOMÁTICA
+// Detecta novos commits no GitHub → mostra botão no app → atualiza
+// sem sair do app e sem perder progresso
+// ═══════════════════════════════════════════════════════════════
+const GH_COMMITS_URL='https://api.github.com/repos/Audenscompany/detran-quest/commits?per_page=1';
+const GH_ISSUES_URL='https://api.github.com/repos/Audenscompany/detran-quest/issues';
+const DQ_LAST_COMMIT='dq_last_commit_sha';
+const DQ_GH_PAT='dq_gh_pat';
+let _updateCheckInt=null;
+
+async function checkForUpdates(){
+  try{
+    const res=await fetch(GH_COMMITS_URL,{headers:{'Accept':'application/vnd.github+json'}});
+    if(!res.ok) return;
+    const data=await res.json();
+    const latestSha=data[0]?.sha;
+    if(!latestSha) return;
+    const knownSha=localStorage.getItem(DQ_LAST_COMMIT);
+    if(!knownSha){
+      localStorage.setItem(DQ_LAST_COMMIT,latestSha);
+      return;
+    }
+    if(latestSha!==knownSha){
+      showUpdateFab(latestSha, data[0]?.commit?.message?.split('\n')[0]||'Nova versão disponível');
+    }
+  }catch(e){}
+}
+
+function showUpdateFab(sha, msg){
+  let fab=document.getElementById('dq-update-fab');
+  if(!fab){
+    fab=document.createElement('button');
+    fab.id='dq-update-fab';
+    fab.className='update-fab';
+    document.body.appendChild(fab);
+  }
+  fab.textContent='🔄 Atualização disponível';
+  fab.title=msg;
+  fab.onclick=()=>applyUpdate(sha);
+}
+
+async function applyUpdate(sha){
+  const fab=document.getElementById('dq-update-fab');
+  if(fab) fab.textContent='⏳ Atualizando...';
+  // Salvar progresso antes de qualquer coisa
+  saveGame();
+  await saveToCacheAPI(getStableSaveKey(CURRENT_USER_EMAIL),G);
+  localStorage.setItem(DQ_LAST_COMMIT,sha);
+  // Forçar SW a pegar versão nova
+  if('serviceWorker' in navigator){
+    const reg=await navigator.serviceWorker.getRegistration();
+    if(reg?.waiting){
+      reg.waiting.postMessage({type:'SKIP_WAITING'});
+      navigator.serviceWorker.addEventListener('controllerchange',()=>window.location.reload());
+    } else {
+      // Forçar busca de nova versão do SW
+      if(reg) await reg.update();
+      window.location.reload();
+    }
+  } else {
+    window.location.reload();
+  }
+}
+
+function startUpdateChecker(){
+  checkForUpdates();
+  if(_updateCheckInt) clearInterval(_updateCheckInt);
+  // Verifica a cada 5 minutos e ao voltar para o app
+  _updateCheckInt=setInterval(checkForUpdates, 5*60*1000);
+  document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkForUpdates(); });
+}
+
+// ── Enviar pedido de mudança via GitHub Issues ──
+async function sendChangeRequest(requestText){
+  const pat=localStorage.getItem(DQ_GH_PAT);
+  if(!pat){
+    scAppendBubble('ai','🔑 Para enviar pedidos de mudança diretamente, preciso do seu GitHub PAT.<br><a onclick="setupGHPat()" style="color:var(--pu2);font-weight:700;cursor:pointer">Configurar agora →</a>');
+    return;
+  }
+  scAppendBubble('ai','📤 Enviando seu pedido...');
+  try{
+    const body=`## 📝 Pedido de mudança\n\n**Data:** ${new Date().toLocaleString('pt-BR')}\n\n**Pedido:** ${requestText}\n\n---\n*Enviado pelo Sensei da CNH (app)*`;
+    const res=await fetch(GH_ISSUES_URL,{
+      method:'POST',
+      headers:{'Authorization':'Bearer '+pat,'Content-Type':'application/json','Accept':'application/vnd.github+json'},
+      body:JSON.stringify({title:'[Pedido] '+requestText.slice(0,80),body,labels:['pedido']})
+    });
+    if(res.ok){
+      const chat=document.getElementById('sc-chat');
+      const last=chat?.lastElementChild;
+      if(last) last.innerHTML='✅ Pedido enviado! Assim que implementado o botão 🔄 aparece aqui automaticamente — só toque para atualizar sem sair do app.';
+    } else {
+      const last=document.getElementById('sc-chat')?.lastElementChild;
+      if(last) last.innerHTML='❌ Erro ao enviar. Verifique seu PAT do GitHub.';
+    }
+  }catch(e){
+    const last=document.getElementById('sc-chat')?.lastElementChild;
+    if(last) last.innerHTML='Sem conexão. Tente novamente.';
+  }
+}
+
+function setupGHPat(){
+  const k=(prompt('Cole seu GitHub Personal Access Token:\n(o mesmo que usamos para commitar as mudanças)')||'').trim();
+  if(!k) return;
+  localStorage.setItem(DQ_GH_PAT,k);
+  scAppendBubble('ai','✅ PAT configurado! Agora você pode pedir mudanças diretamente aqui no chat.');
+}
+
 // ═══ SKIP / PULAR QUESTÕES ═══
 function skipNQuestions(n){
   closeSkipMenu();
@@ -9563,6 +9676,10 @@ function executeSenseiAction(action){
       if(confirm('Tem certeza? Isso apaga TODO seu progresso.')){
         G=freshState(); saveGame(); closeSensei(); nextStep();
       }
+    } else if(act==='CHANGE_REQUEST'||act==='PEDIDO'||act==='DEV'){
+      // Envia pedido de mudança para o GitHub
+      const lastUserMsg=_senseiHistory.filter(m=>m.role==='user').pop();
+      if(lastUserMsg) sendChangeRequest(lastUserMsg.content);
     }
   },350);
 }
@@ -9646,8 +9763,10 @@ Exemplos:
 - "pula essa" → [AÇÃO: PULAR_1]
 - "recomeça as questões" → [AÇÃO: RESETAR]
 
-Se o aluno pedir algo que você pode executar, EXECUTE via [AÇÃO:] sem questionar.
-Para dúvidas de CONTEÚDO (explicações, macetes), responda normalmente sem ação.`;
+Se o aluno pedir algo que você pode executar no jogo, EXECUTE via [AÇÃO:] sem questionar.
+Para dúvidas de CONTEÚDO (explicações, macetes), responda normalmente sem ação.
+
+PEDIDOS DE MUDANÇA NO APP: Se o aluno pedir uma mudança, nova funcionalidade, ou melhoria no próprio aplicativo (ex: "quero que o timer seja maior", "adiciona um modo X", "muda a cor", "cria uma tela de Y"), responda confirmando que você vai enviar o pedido e emita [AÇÃO: CHANGE_REQUEST]. Você não faz a mudança diretamente — você registra o pedido para ser implementado automaticamente. Quando implementado, o botão 🔄 aparece no app para o aluno atualizar sem perder progresso.`;
 
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{
