@@ -244,6 +244,22 @@ body.theme-arcade_fight .play-btn,body.theme-arcade_fight .login-title{text-shad
 .sensei-opt-btn:hover{border-color:var(--pu);}
 .sensei-msg{background:#1a1530;border:1px solid var(--pu3);border-radius:13px;padding:14px;margin-top:10px;font-size:13px;line-height:1.6;}
 .sensei-mini-q{font-size:13px;font-weight:700;margin-bottom:10px;}
+/* ═══ SENSEI CHAT ═══ */
+.sensei-modal{display:flex;flex-direction:column;max-height:82vh;overflow:hidden;}
+.sensei-chat-area{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px 0 8px;min-height:60px;max-height:44vh;}
+.sc-bubble-user{background:var(--pu3);color:#fff;border-radius:14px 14px 4px 14px;padding:10px 14px;font-size:13px;align-self:flex-end;max-width:82%;line-height:1.5;word-break:break-word;}
+.sc-bubble-ai{background:var(--c2);border:1px solid var(--brd);border-radius:4px 14px 14px 14px;padding:10px 14px;font-size:13px;align-self:flex-start;max-width:90%;line-height:1.7;word-break:break-word;}
+.sc-typing{color:var(--mu);font-size:18px;padding:4px 8px;letter-spacing:4px;align-self:flex-start;}
+.sc-chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 10px;}
+.sc-chip{background:var(--c2);border:1px solid var(--brd);border-radius:99px;padding:5px 12px;font-size:11px;font-weight:700;color:var(--tx);cursor:pointer;white-space:nowrap;}
+.sc-chip:active{border-color:var(--pu);background:var(--c3);}
+.sc-input-row{display:flex;gap:8px;margin-top:10px;align-items:flex-end;}
+.sc-input{flex:1;background:var(--c2);border:1.5px solid var(--brd);border-radius:14px;padding:11px 14px;font-size:14px;color:var(--tx);font-family:inherit;resize:none;line-height:1.4;max-height:90px;overflow-y:auto;}
+.sc-input:focus{outline:none;border-color:var(--pu);}
+.sc-send{background:var(--pu);color:#fff;border:none;border-radius:12px;padding:11px 15px;font-size:18px;cursor:pointer;flex-shrink:0;transition:opacity .15s;}
+.sc-send:disabled{opacity:.35;cursor:default;}
+.sc-footer{font-size:10px;color:var(--mu);text-align:center;margin-top:6px;}
+.sc-footer a{color:var(--pu2);cursor:pointer;font-weight:700;}
 
 /* ═══ PANEL (⚙️) ═══ */
 .panel-modal{background:var(--c1);border:1px solid var(--brd2);border-radius:22px 22px 0 0;padding:1.5rem 1.25rem 2rem;max-width:560px;width:100%;max-height:85vh;overflow-y:auto;}
@@ -370,16 +386,22 @@ body.theme-arcade_fight .play-btn,body.theme-arcade_fight .login-title{text-shad
       </div>
       <button class="sensei-close" onclick="closeSensei()">×</button>
     </div>
-    <div class="sensei-grid">
-      <button class="sensei-opt-btn" onclick="askSensei('nao_entendi')">😕 Não entendi</button>
-      <button class="sensei-opt-btn" onclick="askSensei('macete')">🧩 Me dê um macete</button>
-      <button class="sensei-opt-btn" onclick="askSensei('me_teste')">🎯 Me teste</button>
-      <button class="sensei-opt-btn" onclick="askSensei('anime')">🎮 Explique como jogo</button>
-      <button class="sensei-opt-btn" onclick="askSensei('onde_fraco')">📉 Onde estou fraco?</button>
-      <button class="sensei-opt-btn" onclick="askSensei('o_que_fazer')">🎯 O que faço agora?</button>
+    <!-- Área de chat -->
+    <div class="sensei-chat-area" id="sc-chat"></div>
+    <!-- Chips de atalho -->
+    <div class="sc-chips">
+      <button class="sc-chip" onclick="askSensei('nao_entendi')">😕 Não entendi</button>
+      <button class="sc-chip" onclick="askSensei('macete')">🧩 Macete</button>
+      <button class="sc-chip" onclick="askSensei('me_teste')">🎯 Me teste</button>
+      <button class="sc-chip" onclick="askSensei('onde_fraco')">📉 Onde estou fraco?</button>
+      <button class="sc-chip" onclick="askSensei('resumir')">📌 Resumo</button>
     </div>
-    <button class="sensei-opt-btn" style="width:100%" onclick="askSensei('resumir')">📌 Resuma em 1 frase</button>
-    <div id="sensei-answer"></div>
+    <!-- Input livre -->
+    <div class="sc-input-row">
+      <textarea class="sc-input" id="sc-input" rows="1" placeholder="Digite sua dúvida…" onkeydown="scKeyDown(event)"></textarea>
+      <button class="sc-send" id="sc-send-btn" onclick="scSend()">➤</button>
+    </div>
+    <div class="sc-footer" id="sc-footer"></div>
   </div>
 </div>
 
@@ -9201,36 +9223,182 @@ function professorNextAction(g){
   return {text:`Bora fortalecer: <b>${names.join(', ')}</b>. Isso vai puxar seu Poder de Aprovação pra cima rápido.`};
 }
 
+// ═══ SENSEI CHAT ═══
+let _senseiHistory=[];
+
 function openSensei(){
   const conceptId=G.curConceptId||getNextConceptId();
   const concept=getConceptById(conceptId);
+  _senseiHistory=[];
   document.getElementById('sensei-overlay').classList.remove('hide');
   document.getElementById('sensei-context').textContent=concept?concept.name:'';
-  document.getElementById('sensei-answer').innerHTML='';
+  const chat=document.getElementById('sc-chat');
+  chat.innerHTML='';
+  const hasKey=!!localStorage.getItem('dq_anthropic_key');
+  scAppendBubble('ai','👋 Olá! Pode me perguntar qualquer coisa sobre '+(concept?'<b>'+concept.name+'</b>':'CNH')+'. Ou use os atalhos rápidos abaixo.');
+  scUpdateFooter();
 }
+
 function closeSensei(){document.getElementById('sensei-overlay').classList.add('hide');}
 
+function scUpdateFooter(){
+  const hasKey=!!localStorage.getItem('dq_anthropic_key');
+  const f=document.getElementById('sc-footer');
+  if(f) f.innerHTML=hasKey?'🤖 IA ativa · <a onclick="scRemoveKey()">Remover chave</a>':'<a onclick="setupSenseiKey()">🔑 Configurar IA (Anthropic API)</a> para respostas livres';
+}
+
+function scRemoveKey(){
+  localStorage.removeItem('dq_anthropic_key');
+  scUpdateFooter();
+  scAppendBubble('ai','Chave removida. Você pode configurar novamente quando quiser.');
+}
+
+function setupSenseiKey(){
+  const k=(prompt('Cole sua chave da API Anthropic (começa com sk-ant-):
+
+Ela fica salva só neste dispositivo, nunca vai para nenhum servidor nosso.')||"").trim();
+  if(!k) return;
+  if(k.startsWith('sk-ant-')||k.startsWith('sk-')){
+    localStorage.setItem('dq_anthropic_key',k);
+    scUpdateFooter();
+    scAppendBubble('ai','✅ Chave configurada! Agora pode digitar qualquer dúvida livremente.');
+  } else {
+    scAppendBubble('ai','❌ Chave inválida. Precisa começar com <b>sk-ant-</b>');
+  }
+}
+
+function scAppendBubble(type,html){
+  const chat=document.getElementById('sc-chat');
+  if(!chat) return;
+  const div=document.createElement('div');
+  div.className=type==='user'?'sc-bubble-user':'sc-bubble-ai';
+  div.innerHTML=html;
+  chat.appendChild(div);
+  chat.scrollTop=chat.scrollHeight;
+  return div;
+}
+
+function scSetSending(on){
+  const btn=document.getElementById('sc-send-btn');
+  const inp=document.getElementById('sc-input');
+  if(btn) btn.disabled=on;
+  if(inp) inp.disabled=on;
+}
+
+function scKeyDown(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();scSend();}
+}
+
+function scSend(){
+  const inp=document.getElementById('sc-input');
+  if(!inp) return;
+  const text=inp.value.trim();
+  if(!text) return;
+  inp.value='';
+  inp.style.height='';
+  sendSenseiChat(text);
+}
+
 function askSensei(intent){
-  const conceptId=G.curConceptId||getNextConceptId();
-  const resp=professorIA(intent,G,conceptId);
-  const box=document.getElementById('sensei-answer');
-  if(resp.miniQuestion){
-    const mq=resp.miniQuestion;
-    box.innerHTML=`<div class="sensei-msg">
-      <div class="sensei-mini-q">${mq.txt}</div>
-      ${mq.opts.map((o,i)=>`<button class="opt-flow" onclick="answerSenseiQuiz(${i},${mq.c})">${o}</button>`).join('')}
-    </div>`;
+  const labels={nao_entendi:'Não entendi',macete:'Me dê um macete',me_teste:'Me teste',anime:'Explique como jogo',onde_fraco:'Onde estou fraco?',o_que_fazer:'O que faço agora?',resumir:'Resuma em 1 frase'};
+  sendSenseiChat(labels[intent]||intent,intent);
+}
+
+async function sendSenseiChat(text,localIntent){
+  if(!text) return;
+  scAppendBubble('user',text);
+  _senseiHistory.push({role:'user',content:text});
+  scSetSending(true);
+
+  // Indicador de digitação
+  const chat=document.getElementById('sc-chat');
+  const typing=document.createElement('div');
+  typing.className='sc-typing'; typing.id='sc-typing-ind'; typing.textContent='● ● ●';
+  chat.appendChild(typing); chat.scrollTop=chat.scrollHeight;
+
+  let responseText;
+  const apiKey=localStorage.getItem('dq_anthropic_key');
+
+  if(apiKey){
+    responseText=await callSenseiAPI(text,apiKey);
+  } else if(localIntent){
+    // Fallback local para atalhos sem API key
+    const conceptId=G.curConceptId||getNextConceptId();
+    const resp=professorIA(localIntent,G,conceptId);
+    if(resp.miniQuestion){
+      const mq=resp.miniQuestion;
+      document.getElementById('sc-typing-ind')?.remove();
+      const wrapper=scAppendBubble('ai',`<div class="sensei-mini-q">${mq.txt}</div>${mq.opts.map((o,i)=>`<button class="opt-flow" style="margin-bottom:6px" onclick="scAnswerQuiz(${i},${mq.c})">${o}</button>`).join('')}`);
+      _senseiHistory.push({role:'assistant',content:mq.txt});
+      scSetSending(false);
+      return;
+    }
+    responseText=resp.text||'Continue jogando que te ajudo no próximo conceito.';
+  } else {
+    document.getElementById('sc-typing-ind')?.remove();
+    scAppendBubble('ai','🔑 Para perguntas livres preciso da API Anthropic. <a onclick="setupSenseiKey()" style="color:var(--pu2);font-weight:700;cursor:pointer">Configurar agora →</a>');
+    _senseiHistory.push({role:'assistant',content:'Sem chave de API.' });
+    scSetSending(false);
     return;
   }
-  box.innerHTML=`<div class="sensei-msg">${resp.text}</div>`;
+
+  document.getElementById('sc-typing-ind')?.remove();
+  _senseiHistory.push({role:'assistant',content:responseText});
+  scAppendBubble('ai',responseText);
+  scSetSending(false);
 }
-function answerSenseiQuiz(pos,correct){
-  const ok=pos===correct;
-  document.querySelectorAll('#sensei-answer .opt-flow').forEach((b,i)=>{
+
+function scAnswerQuiz(pos,correct){
+  document.querySelectorAll('#sc-chat .opt-flow').forEach((b,i)=>{
     b.disabled=true;
     if(i===correct)b.classList.add('ok');else if(i===pos)b.classList.add('ko');
   });
 }
+
+async function callSenseiAPI(userText,apiKey){
+  const conceptId=G.curConceptId||getNextConceptId();
+  const concept=getConceptById(conceptId);
+  const dominated=Object.values(G.concepts).filter(c=>c.status==='dominado').length;
+  const weakTopics=ALL_TOPICS.map(t=>({t,m:topicMastery(G,t)})).filter(r=>r.m>0).sort((a,b)=>a.m-b.m).slice(0,2).map(r=>TNAME[r.t]).filter(Boolean).join(', ');
+
+  const sys=`Você é o Sensei da CNH, assistente de estudo especialista no exame teórico do DETRAN brasileiro. Responda SEMPRE em português, de forma direta, clara e encorajadora. Máximo 4 frases curtas. Não use markdown com # ou ---. Use negrito simples apenas se necessário.
+
+Contexto do aluno: Nível ${G.level} · ${G.totalQ} questões respondidas · ${dominated}/${CONCEPTS.length} conceitos dominados${weakTopics?' · Mais fraco em: '+weakTopics:''}.
+${concept?'Conceito em estudo agora: '+concept.name+'. '+concept.teach.rule:'Revisão geral da CNH.'}`;
+
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{
+        'Content-Type':'application/json',
+        'x-api-key':apiKey,
+        'anthropic-version':'2023-06-01',
+        'anthropic-dangerous-direct-browser-access':'true'
+      },
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:400,
+        system:sys,
+        messages:_senseiHistory.slice(-8)
+      })
+    });
+    if(!res.ok){
+      if(res.status===401){
+        localStorage.removeItem('dq_anthropic_key');
+        scUpdateFooter();
+        return '🔑 Chave inválida ou expirada. <a onclick="setupSenseiKey()" style="cursor:pointer;color:var(--pu2)">Reconfigurar</a>';
+      }
+      return 'Erro '+res.status+'. Tenta novamente?';
+    }
+    const data=await res.json();
+    return (data.content&&data.content[0]&&data.content[0].text)||'Sem resposta.';
+  }catch(e){
+    return 'Sem conexão com a internet. Verifique e tente de novo.';
+  }
+}
+
+// Compatibilidade legada
+function answerSenseiQuiz(pos,correct){ scAnswerQuiz(pos,correct); }
 
 
 // ═══════════════════════════════════════════════════════════════
