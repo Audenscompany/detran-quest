@@ -9319,25 +9319,38 @@ async function sendSenseiChat(text,localIntent){
 
   if(apiKey){
     responseText=await callSenseiAPI(text,apiKey);
-  } else if(localIntent){
-    // Fallback local para atalhos sem API key
-    const conceptId=G.curConceptId||getNextConceptId();
-    const resp=professorIA(localIntent,G,conceptId);
-    if(resp.miniQuestion){
-      const mq=resp.miniQuestion;
+  } else {
+    // Sem API key: detecta comando local ou usa fallback de intent
+    const localCmd=detectLocalSenseiCommand(text);
+    if(localCmd){
       document.getElementById('sc-typing-ind')?.remove();
-      const wrapper=scAppendBubble('ai',`<div class="sensei-mini-q">${mq.txt}</div>${mq.opts.map((o,i)=>`<button class="opt-flow" style="margin-bottom:6px" onclick="scAnswerQuiz(${i},${mq.c})">${o}</button>`).join('')}`);
-      _senseiHistory.push({role:'assistant',content:mq.txt});
+      const cmdLabels={'PULAR':'Pulando para próxima questão...','SIMULADO':'Iniciando simulado...','PROGRESSO':'Abrindo seu progresso...','FECHAR':'Fechando o Sensei...','REPETIR':'Repetindo questão atual...','SPRINT_ERROS':'Iniciando sprint dos pontos fracos...','REVISAO_ERROS':'Iniciando revisão de erros...'};
+      const label=cmdLabels[localCmd]||(localCmd.startsWith('TOPICO:')?'Indo para matéria...':'Executando...');
+      scAppendBubble('ai','⚡ '+label);
+      _senseiHistory.push({role:'assistant',content:label});
+      scSetSending(false);
+      executeSenseiAction(localCmd);
+      return;
+    }
+    if(localIntent){
+      const conceptId=G.curConceptId||getNextConceptId();
+      const resp=professorIA(localIntent,G,conceptId);
+      if(resp.miniQuestion){
+        const mq=resp.miniQuestion;
+        document.getElementById('sc-typing-ind')?.remove();
+        scAppendBubble('ai',`<div class="sensei-mini-q">${mq.txt}</div>${mq.opts.map((o,i)=>`<button class="opt-flow" style="margin-bottom:6px" onclick="scAnswerQuiz(${i},${mq.c})">${o}</button>`).join('')}`);
+        _senseiHistory.push({role:'assistant',content:mq.txt});
+        scSetSending(false);
+        return;
+      }
+      responseText=resp.text||'Continue jogando que te ajudo no próximo conceito.';
+    } else {
+      document.getElementById('sc-typing-ind')?.remove();
+      scAppendBubble('ai','🔑 Para perguntas livres e controle total do jogo, configure a API Anthropic. <a onclick="setupSenseiKey()" style="color:var(--pu2);font-weight:700;cursor:pointer">Configurar agora →</a>');
+      _senseiHistory.push({role:'assistant',content:'Sem chave de API.'});
       scSetSending(false);
       return;
     }
-    responseText=resp.text||'Continue jogando que te ajudo no próximo conceito.';
-  } else {
-    document.getElementById('sc-typing-ind')?.remove();
-    scAppendBubble('ai','🔑 Para perguntas livres preciso da API Anthropic. <a onclick="setupSenseiKey()" style="color:var(--pu2);font-weight:700;cursor:pointer">Configurar agora →</a>');
-    _senseiHistory.push({role:'assistant',content:'Sem chave de API.' });
-    scSetSending(false);
-    return;
   }
 
   document.getElementById('sc-typing-ind')?.remove();
@@ -9353,43 +9366,117 @@ function scAnswerQuiz(pos,correct){
   });
 }
 
+// ── Executa ação de jogo emitida pelo Sensei ──
+function executeSenseiAction(action){
+  const act=action.toUpperCase().trim();
+  setTimeout(()=>{
+    if(act==='PULAR'||act==='PROXIMA'||act==='PRÓXIMA'){
+      closeSensei(); afterQuestionFlow();
+    } else if(act==='SIMULADO'){
+      closeSensei(); const qs=buildSimQuestions(30); if(qs) startSim('treino',qs); else showToast('Estude mais um pouco antes do simulado!');
+    } else if(act==='SIMULADO_REAL'){
+      closeSensei(); startSim('prova');
+    } else if(act==='PROGRESSO'){
+      closeSensei(); openProgressPanel();
+    } else if(act==='FECHAR'){
+      closeSensei();
+    } else if(act==='REPETIR'){
+      closeSensei(); if(G.curConceptId) renderQuestion(false);
+    } else if(act==='SPRINT_ERROS'||act==='SPRINT'){
+      closeSensei();
+      const weak=getTop3Weak(G);
+      _smartQueue=weak.length>0?weak:[CONCEPTS[0].id];
+      nextStep();
+    } else if(act==='REVISAO_ERROS'||act==='ERROS'){
+      closeSensei();
+      const errIds=[...new Set(G.errorBank.map(e=>e.conceptId))];
+      _smartQueue=errIds.length>0?errIds:getTop3Weak(G);
+      if(_smartQueue.length>0) nextStep(); else showToast('Sem erros pendentes — continue estudando!');
+    } else if(act.startsWith('TOPICO:')){
+      const topicKey=act.split(':')[1].toLowerCase();
+      closeSensei();
+      const unseen=CONCEPTS.filter(c=>c.topic===topicKey&&!G.seenQKeys.includes(c.id+'_0'));
+      const pool=unseen.length>0?unseen:CONCEPTS.filter(c=>c.topic===topicKey);
+      if(pool.length>0){
+        _smartQueue=pool.map(c=>c.id);
+        nextStep();
+      } else showToast('Matéria não encontrada: '+topicKey);
+    }
+  },350);
+}
+
+// ── Detecção local de comandos (sem API key) ──
+function detectLocalSenseiCommand(text){
+  const t=text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if(/pul(a|ar)|proxim|avanc|next|skip/.test(t)) return 'PULAR';
+  if(/simulad/.test(t)) return 'SIMULADO';
+  if(/progress|estatistic|resultado|resumo geral|painel/.test(t)) return 'PROGRESSO';
+  if(/fech(a|ar)|sai(r|)|volta(r)? ao jogo/.test(t)) return 'FECHAR';
+  if(/repet|de novo|mesm|outra vez/.test(t)) return 'REPETIR';
+  if(/sprint|ponto(s)? frac/.test(t)) return 'SPRINT_ERROS';
+  if(/erro(s)?|revis(a|ao|ão)/.test(t)) return 'REVISAO_ERROS';
+  // Tópicos por nome
+  const topicMap={'legisla':'lei','infra':'lei','cnh':'lei','defensiv':'def','plac':'pla','socorro':'soc','mecanic':'mec','ambient':'amb','cidadan':'cid','pedes':'ped','ciclist':'cic','emergenc':'emerg','document':'doc'};
+  for(const [k,v] of Object.entries(topicMap)){ if(t.includes(k)) return 'TOPICO:'+v; }
+  return null;
+}
+
 async function callSenseiAPI(userText,apiKey){
   const conceptId=G.curConceptId||getNextConceptId();
   const concept=getConceptById(conceptId);
   const dominated=Object.values(G.concepts).filter(c=>c.status==='dominado').length;
   const weakTopics=ALL_TOPICS.map(t=>({t,m:topicMastery(G,t)})).filter(r=>r.m>0).sort((a,b)=>a.m-b.m).slice(0,2).map(r=>TNAME[r.t]).filter(Boolean).join(', ');
+  const errCount=G.errorBank.length;
 
-  const sys=`Você é o Sensei da CNH, assistente de estudo especialista no exame teórico do DETRAN brasileiro. Responda SEMPRE em português, de forma direta, clara e encorajadora. Máximo 4 frases curtas. Não use markdown com # ou ---. Use negrito simples apenas se necessário.
+  const sys=`Você é o Sensei da CNH, assistente de estudo do DETRAN Quest. Responda SEMPRE em português, de forma direta e encorajadora. Máximo 4 frases. Sem markdown pesado.
 
-Contexto do aluno: Nível ${G.level} · ${G.totalQ} questões respondidas · ${dominated}/${CONCEPTS.length} conceitos dominados${weakTopics?' · Mais fraco em: '+weakTopics:''}.
-${concept?'Conceito em estudo agora: '+concept.name+'. '+concept.teach.rule:'Revisão geral da CNH.'}`;
+Contexto do aluno: Nível ${G.level} · ${G.totalQ} perguntas respondidas · ${dominated}/${CONCEPTS.length} conceitos dominados${weakTopics?' · Mais fraco em: '+weakTopics:''}${errCount>0?' · '+errCount+' erro(s) pendentes':''}.
+Conceito atual: ${concept?concept.name+' — '+concept.teach.rule:'Nenhum (revisão geral)'}.
+
+AÇÕES DE JOGO: Você pode controlar o jogo emitindo um comando NO FINAL da resposta, quando o aluno pedir. Use exatamente este formato: [AÇÃO: NOME]
+
+Ações disponíveis:
+[AÇÃO: PULAR] → pula para próxima questão/conceito
+[AÇÃO: SIMULADO] → inicia simulado de treino (30 questões)
+[AÇÃO: SIMULADO_REAL] → inicia o simulado oficial
+[AÇÃO: PROGRESSO] → abre painel de progresso e estatísticas
+[AÇÃO: FECHAR] → fecha o Sensei e volta ao jogo
+[AÇÃO: REPETIR] → repete a questão atual
+[AÇÃO: SPRINT_ERROS] → inicia sprint dos 3 pontos mais fracos
+[AÇÃO: REVISAO_ERROS] → revisa conceitos com erro pendente
+[AÇÃO: TOPICO:lei] → vai direto para Legislação
+[AÇÃO: TOPICO:def] → vai para Direção Defensiva
+[AÇÃO: TOPICO:pla] → vai para Placas
+[AÇÃO: TOPICO:soc] → vai para Primeiros Socorros
+[AÇÃO: TOPICO:mec] → vai para Mecânica
+[AÇÃO: TOPICO:amb] → vai para Meio Ambiente
+[AÇÃO: TOPICO:cid] → vai para Cidadania
+[AÇÃO: TOPICO:ped] → vai para Pedestres
+[AÇÃO: TOPICO:cic] → vai para Ciclistas
+[AÇÃO: TOPICO:emerg] → vai para Veículos de Emergência
+[AÇÃO: TOPICO:doc] → vai para Documentação
+
+Emita o comando SOMENTE quando o aluno pedir uma ação de navegação. Para dúvidas de conteúdo, responda normalmente sem nenhum comando.`;
 
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{
       method:'POST',
-      headers:{
-        'Content-Type':'application/json',
-        'x-api-key':apiKey,
-        'anthropic-version':'2023-06-01',
-        'anthropic-dangerous-direct-browser-access':'true'
-      },
-      body:JSON.stringify({
-        model:'claude-haiku-4-5-20251001',
-        max_tokens:400,
-        system:sys,
-        messages:_senseiHistory.slice(-8)
-      })
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:450,system:sys,messages:_senseiHistory.slice(-8)})
     });
     if(!res.ok){
-      if(res.status===401){
-        localStorage.removeItem('dq_anthropic_key');
-        scUpdateFooter();
-        return '🔑 Chave inválida ou expirada. <a onclick="setupSenseiKey()" style="cursor:pointer;color:var(--pu2)">Reconfigurar</a>';
-      }
+      if(res.status===401){localStorage.removeItem('dq_anthropic_key');scUpdateFooter();return '🔑 Chave inválida. <a onclick="setupSenseiKey()" style="cursor:pointer;color:var(--pu2)">Reconfigurar</a>';}
       return 'Erro '+res.status+'. Tenta novamente?';
     }
     const data=await res.json();
-    return (data.content&&data.content[0]&&data.content[0].text)||'Sem resposta.';
+    let text=(data.content&&data.content[0]&&data.content[0].text)||'Sem resposta.';
+    // Detectar e executar ação embutida na resposta
+    const actionMatch=text.match(/\[AÇÃO:\s*([^\]]+)\]/i);
+    if(actionMatch){
+      text=text.replace(/\[AÇÃO:[^\]]+\]/gi,'').trim();
+      executeSenseiAction(actionMatch[1]);
+    }
+    return text;
   }catch(e){
     return 'Sem conexão com a internet. Verifique e tente de novo.';
   }
