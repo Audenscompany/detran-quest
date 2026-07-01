@@ -8688,6 +8688,8 @@ function goQuestion(){
       if(q&&!G.answered&&G.curConceptId===concept.id){
         _currentAIQuestion=q;
         // Atualizar só o texto e opções sem resetar timer
+        // NUNCA atualizar durante boss fight (mesmo id "opts")
+        if(_inBossFight) return;
         const qEl=document.getElementById('flow-q-txt');
         const optsEl=document.getElementById('opts');
         if(qEl&&optsEl&&!G.answered){
@@ -9084,7 +9086,7 @@ function maybeTriggerBoss(topic){
   }
 }
 
-let _bossQs=[],_bossIdx=0,_bossHP=100,_bossPlayerHP=100,_bossTopic=null;
+let _bossQs=[],_bossIdx=0,_bossHP=100,_bossPlayerHP=100,_bossTopic=null,_inBossFight=false;
 
 function startBossBattle(topic){
   G._bossQueued=false;
@@ -9118,6 +9120,7 @@ function startBossBattle(topic){
   }
   // Atualiza a memória de "perguntas recentes do chefe" (mantém só as últimas 30)
   G.recentBossQKeys=[...G.recentBossQKeys,..._bossQs.map(q=>q.key)].slice(-30);
+  _inBossFight=true;
   renderBossIntro(topic);
 }
 
@@ -9160,6 +9163,7 @@ function answerBoss(pos,cm){
 }
 
 function finishBoss(){
+  _inBossFight=false;
   const won=_bossHP<=0;
   if(!G.bossWave) G.bossWave={};
   if(!G.bossWaveSnapshot) G.bossWaveSnapshot={};
