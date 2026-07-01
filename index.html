@@ -6877,6 +6877,7 @@ function freshState(){
     studyTimeMs:0, // tempo total estudado (ms)
     studyTimeByTopic:Object.fromEntries(ALL_TOPICS.map(t=>[t,0])),
     lastTickTime:Date.now(),
+    seenQKeys:[], // "conceptId_qIdx" — questões já exibidas (REGRA ABSOLUTA: jamais repetir se acertada)
     sessionHistory:[], // [{date, questionsAnswered, durationMs}]
     bossesDefeated:[], // topics com 1ª vitória (badge)
     bossWave:{}, // quantas ondas de chefão já venceu, por tópico
@@ -6960,6 +6961,13 @@ function normalizeSaveData(oldSave,email){
   merged.bossesDefeated=merged.bossesDefeated||[];
   merged.sessionHistory=merged.sessionHistory||[];
   merged.studyTimeByTopic=merged.studyTimeByTopic||Object.fromEntries(ALL_TOPICS.map(t=>[t,0]));
+  // REGRA ABSOLUTA anti-repetição: reconstrói seenQKeys a partir do histórico existente
+  // se o campo não existia no save (usuário que atualizou de versão antiga).
+  if(!merged.seenQKeys||merged.seenQKeys.length===0){
+    merged.seenQKeys=CONCEPTS
+      .filter(c=>merged.concepts[c.id]&&merged.concepts[c.id].attempts>0)
+      .map(c=>c.id+'_0');
+  }
   return merged;
 }
 
@@ -7878,37 +7886,47 @@ function isReviewDue(c,qCount){
 // errado nada) foi removida — a repetição espaçada agora nasce do desempenho
 // real no simulado, nunca de um relógio interno.
 function getNextConceptId(){
-  ensureConceptIntegrity(); // segunda camada de proteção: barato e idempotente, nunca deixa isso quebrar de novo
+  ensureConceptIntegrity();
   const qCount=G.totalQ;
-  // 1) Conceito que caiu de 'dominado' por erro em simulado, ou que ainda está
-  // em formação e tem uma revisão de curto prazo pendente (nunca é 'dominado' aqui).
-  const dueReview=Object.entries(G.concepts).find(([id,c])=>isReviewDue(c,qCount) && c.status!=='dominado');
+
+  // ══════════════════════════════════════════════════════════
+  // REGRA ABSOLUTA: questão já vista E sem erro pendente → JAMAIS repetir no fluxo normal.
+  // seenCorrectly(id) = true  ⟹  não entra em nenhuma regra de repetição.
+  // Só pode voltar se: (a) errou a questão → fica no errorBank, ou
+  //                    (b) errou no simulado → status cai de 'dominado' + reentra no errorBank.
+  // ══════════════════════════════════════════════════════════
+  const seenCorrectly=(id)=>
+    G.seenQKeys.includes(id+'_0') && !G.errorBank.find(e=>e.conceptId===id);
+
+  // 1) Revisão pendente SOMENTE para conceitos com erro ainda no banco (acertados não voltam).
+  const dueReview=Object.entries(G.concepts).find(([id,c])=>
+    isReviewDue(c,qCount) && c.status!=='dominado' && G.errorBank.find(e=>e.conceptId===id)
+  );
   if(dueReview) return dueReview[0];
-  // 2) A cada poucas perguntas, força uma revisão do conceito com MAIOR dificuldade
-  // combinada (erro + tempo de resposta) entre os já estudados — é isso que faz o
-  // algoritmo "entender" onde estão as dificuldades de verdade, em vez de só usar
-  // um limiar fixo de mastery. Só dispara se existir algo genuinamente difícil
-  // (score>=45); senão não força nada à toa.
-  if(qCount>0 && qCount%4===0){
-    const hardest=getHighestDifficultyConcept(false,45);
-    if(hardest) return hardest;
-  }
-  // 3) Conteúdo NUNCA visto — sempre prioridade sobre repetir o que já foi dominado
-  const nextNew=CONCEPTS.find(c=>G.concepts[c.id].attempts===0);
-  if(nextNew) return nextNew.id;
-  // 4) Conceitos críticos — agora pelo score combinado, não só mastery<40 isolado
+
+  // 2) PRIORIDADE MÁXIMA: questões ainda não exibidas em nenhuma sessão.
+  //    Usa a ordem do array CONCEPTS para garantir progressão linear e previsível.
+  const nextUnseen=CONCEPTS.find(c=>!G.seenQKeys.includes(c.id+'_0'));
+  if(nextUnseen) return nextUnseen.id;
+
+  // 3) Questões vistas com erro pendente (foi visto mas errou → pode repetir para aprender).
+  const withError=CONCEPTS.find(c=>
+    G.errorBank.find(e=>e.conceptId===c.id) && G.concepts[c.id].status!=='dominado'
+  );
+  if(withError) return withError.id;
+
+  // 4) Conceitos críticos não-dominados e ainda não acertados de forma limpa.
   const critical=getHighestDifficultyConcept(false,55);
-  if(critical){
+  if(critical && !seenCorrectly(critical)){
     const c=G.concepts[critical];
-    if(c.timesWrong<8) return critical; // proteção contra martelar um conceito sem sair do lugar
+    if(c.timesWrong<8) return critical;
   }
-  // 5) Mais difícil (erro+tempo) entre os ainda não dominados (nunca volta pro que já está dominado sem motivo)
-  const weakestNotDominated=getHighestDifficultyConcept(false,0);
-  if(weakestNotDominated) return weakestNotDominated;
-  // 6) Não sobrou NADA para ensinar: tudo que existe está 'dominado' e não há
-  // nenhum erro de simulado pendente de revisão. Devolve null — quem chama
-  // (nextStep) mostra a tela de "vá para o simulado" em vez de repetir
-  // conteúdo já dominado sem nenhum motivo real.
+
+  // 5) Qualquer não-dominado que ainda não foi visto corretamente.
+  const weakest=getHighestDifficultyConcept(false,0);
+  if(weakest && !seenCorrectly(weakest)) return weakest;
+
+  // 6) Tudo visto e acertado → sem mais conteúdo novo. Quem chama mostra tela de simulado.
   return null;
 }
 
@@ -8496,6 +8514,11 @@ function goQuestion(){
 
 function renderQuestion(isRetry){
   clearTInterval();
+  // REGRA ABSOLUTA: marcar questão como vista ao exibir (jamais repetir se acertada)
+  if(!isRetry){
+    const _qk=G.curConceptId+'_'+G.curQIdx;
+    if(!G.seenQKeys.includes(_qk)) G.seenQKeys.push(_qk);
+  }
   const concept=getConceptById(G.curConceptId);
   const Q=concept.questions[G.curQIdx];
   const variedText=isRetry?_lastQText:pickQuestionVariation(concept.id,Q,G.curQIdx);
