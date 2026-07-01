@@ -9468,6 +9468,140 @@ function scAnswerQuiz(pos,correct){
 }
 
 // ═══════════════════════════════════════════════════════════════
+// IMPLEMENTAÇÃO AUTOMÁTICA DE MUDANÇAS
+// Usuário descreve → Claude analisa o código → aplica → push → 🔄
+// ═══════════════════════════════════════════════════════════════
+
+function extractKeywords(text){
+  const stop=['o','a','e','de','da','do','para','que','em','um','uma','os','as','se','eu','isso','quero','mude','muda','coloque','adicione','faca','faça','seria','seria','preciso','gostaria','queria','deixe','deixa','ponha','bota','tire','tira','remove','troca','troque'];
+  return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\w\s]/g,' ').split(/\s+/).filter(w=>w.length>3&&!stop.includes(w)).slice(0,6);
+}
+
+function extractRelevantCode(fullCode,keywords){
+  const lines=fullCode.split('\n');
+  const relevant=new Set();
+  keywords.forEach(kw=>{
+    lines.forEach((line,i)=>{
+      if(line.toLowerCase().includes(kw)){
+        for(let j=Math.max(0,i-8);j<Math.min(lines.length,i+40);j++) relevant.add(j);
+      }
+    });
+  });
+  const sorted=[...relevant].sort((a,b)=>a-b);
+  return sorted.slice(0,400).map(i=>`${i+1}: ${lines[i]}`).join('\n');
+}
+
+function utf8ToBase64(str){
+  const bytes=new TextEncoder().encode(str);
+  let binary='';
+  bytes.forEach(b=>binary+=String.fromCharCode(b));
+  return btoa(binary);
+}
+
+async function autoImplementChange(requestText){
+  const apiKey=localStorage.getItem('dq_anthropic_key');
+  const ghPat=localStorage.getItem(DQ_GH_PAT);
+  if(!apiKey||!ghPat){
+    scAppendBubble('ai','Para implementação automática preciso da chave API Anthropic e do GitHub PAT — ambos já configurados no rodapé do Sensei.');
+    return;
+  }
+  const loadingBubble=scAppendBubble('ai','⚙️ Analisando e implementando automaticamente...');
+  const updateBubble=(msg)=>{ if(loadingBubble) loadingBubble.innerHTML=msg; };
+  try{
+    // 1. Buscar código atual do GitHub
+    updateBubble('⚙️ Buscando código atual...');
+    const codeRes=await fetch('https://raw.githubusercontent.com/Audenscompany/detran-quest/main/index.html?t='+Date.now());
+    if(!codeRes.ok) throw new Error('Erro ao buscar código: '+codeRes.status);
+    const fullCode=await codeRes.text();
+
+    // 2. Extrair trechos relevantes
+    const keywords=extractKeywords(requestText);
+    const relevantCode=extractRelevantCode(fullCode,keywords);
+    updateBubble('🧠 Determinando o que mudar...');
+
+    // 3. Pedir ao Claude as mudanças exatas
+    const sysPrompt=`Você é um editor de código do DETRAN Quest (app de estudo para CNH, HTML+JS).
+Analise os trechos de código fornecidos e retorne APENAS um array JSON com as mudanças a fazer:
+[{"old":"texto exato a substituir","new":"texto novo"}]
+
+REGRAS CRÍTICAS:
+- "old" deve existir EXATAMENTE no código (incluindo espaços, aspas e quebras de linha)
+- Mude o mínimo necessário
+- Retorne APENAS o JSON válido, sem markdown, sem explicação
+- Máximo 3 mudanças por pedido
+- Se não conseguir determinar a mudança exata com certeza, retorne []`;
+
+    const claudeRes=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-6',
+        max_tokens:3000,
+        system:sysPrompt,
+        messages:[{role:'user',content:'Pedido do usuário: '+requestText+'\n\nTrechos relevantes do código (linha: conteúdo):\n```\n'+relevantCode+'\n```'}]
+      })
+    });
+    const claudeData=await claudeRes.json();
+    const rawText=(claudeData.content&&claudeData.content[0]&&claudeData.content[0].text)||'[]';
+    let changes=[];
+    try{ changes=JSON.parse(rawText.replace(/```json|```/g,'').trim()); }catch(e){ changes=[]; }
+
+    if(!changes||changes.length===0){
+      updateBubble('⚠️ Não consegui implementar automaticamente. Enviando como pedido para implementação manual...');
+      await sendChangeRequest(requestText);
+      updateBubble('📬 Pedido enviado! Será implementado e o botão 🔄 aparecerá quando pronto.');
+      return;
+    }
+
+    // 4. Aplicar mudanças
+    updateBubble('✏️ Aplicando '+changes.length+' mudança(s)...');
+    let modifiedCode=fullCode;
+    let applied=0;
+    for(const ch of changes){
+      if(ch.old&&modifiedCode.includes(ch.old)){
+        modifiedCode=modifiedCode.replace(ch.old,ch.new||'');
+        applied++;
+      }
+    }
+    if(applied===0){
+      updateBubble('⚠️ Mudanças identificadas mas não encontradas no código. Enviando como pedido...');
+      await sendChangeRequest(requestText);
+      return;
+    }
+
+    // 5. Buscar SHA atual
+    updateBubble('📤 Enviando para o GitHub...');
+    const shaRes=await fetch('https://api.github.com/repos/Audenscompany/detran-quest/contents/index.html',{
+      headers:{'Authorization':'Bearer '+ghPat,'Accept':'application/vnd.github+json'}
+    });
+    const shaData=await shaRes.json();
+    const currentSha=shaData.sha;
+
+    // 6. Push para o GitHub
+    const pushRes=await fetch('https://api.github.com/repos/Audenscompany/detran-quest/contents/index.html',{
+      method:'PUT',
+      headers:{'Authorization':'Bearer '+ghPat,'Content-Type':'application/json','Accept':'application/vnd.github+json'},
+      body:JSON.stringify({
+        message:'auto: '+requestText.slice(0,80)+' [via Sensei]',
+        content:utf8ToBase64(modifiedCode),
+        sha:currentSha
+      })
+    });
+
+    if(pushRes.ok){
+      updateBubble('✅ Implementado! O botão 🔄 aparece em 1-2 minutos — só tocar para atualizar sem perder progresso.');
+      setTimeout(checkForUpdates,30000); // verificar após 30s
+    } else {
+      const err=await pushRes.json();
+      throw new Error('Push falhou: '+(err.message||pushRes.status));
+    }
+  }catch(e){
+    console.error('autoImplementChange:',e);
+    updateBubble('❌ Erro: '+e.message+'. Tente novamente ou descreva de forma mais específica.');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // SISTEMA DE ATUALIZAÇÃO AUTOMÁTICA
 // Detecta novos commits no GitHub → mostra botão no app → atualiza
 // sem sair do app e sem perder progresso
@@ -9697,9 +9831,9 @@ function executeSenseiAction(action){
         G=freshState(); saveGame(); closeSensei(); nextStep();
       }
     } else if(act==='CHANGE_REQUEST'||act==='PEDIDO'||act==='DEV'){
-      // Envia pedido de mudança para o GitHub
+      // Implementa automaticamente via Claude + GitHub
       const lastUserMsg=_senseiHistory.filter(m=>m.role==='user').pop();
-      if(lastUserMsg) sendChangeRequest(lastUserMsg.content);
+      if(lastUserMsg) autoImplementChange(lastUserMsg.content);
     }
   },350);
 }
@@ -9786,7 +9920,7 @@ Exemplos:
 Se o aluno pedir algo que você pode executar no jogo, EXECUTE via [AÇÃO:] sem questionar.
 Para dúvidas de CONTEÚDO (explicações, macetes), responda normalmente sem ação.
 
-PEDIDOS DE MUDANÇA NO APP: Se o aluno pedir uma mudança, nova funcionalidade, ou melhoria no próprio aplicativo (ex: "quero que o timer seja maior", "adiciona um modo X", "muda a cor", "cria uma tela de Y"), responda confirmando que você vai enviar o pedido e emita [AÇÃO: CHANGE_REQUEST]. Você não faz a mudança diretamente — você registra o pedido para ser implementado automaticamente. Quando implementado, o botão 🔄 aparece no app para o aluno atualizar sem perder progresso.`;
+PEDIDOS DE MUDANÇA NO APP: Se o aluno pedir uma mudança, nova funcionalidade ou melhoria no próprio aplicativo, responda confirmando que vai IMPLEMENTAR AUTOMATICAMENTE e emita [AÇÃO: CHANGE_REQUEST]. O sistema vai buscar o código, aplicar a mudança via Claude e fazer o deploy automático. O botão 🔄 aparece no app em 1-2 minutos para atualizar sem perder progresso.`;
 
   try{
     const res=await fetch('https://api.anthropic.com/v1/messages',{
