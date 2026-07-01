@@ -8642,12 +8642,71 @@ function answerMicroChallenge(pos,correct){
 // ───────────────────────────────────────────────
 // QUESTION — pergunta oficial
 // ───────────────────────────────────────────────
+// ═══ QUESTÕES GERADAS POR IA (issue #3) ═══
+let _currentAIQuestion=null; // questão IA ativa para o conceito atual
+let _aiQGenerating=false;
+
+async function generateAIQuestion(concept){
+  const apiKey=localStorage.getItem('dq_anthropic_key');
+  if(!apiKey||!concept) return null;
+  const sessionKey='dq_aiQ_'+concept.id+'_s'+Math.floor(Date.now()/3600000); // válido por 1h
+  try{
+    const cached=sessionStorage.getItem(sessionKey);
+    if(cached) return JSON.parse(cached);
+  }catch(e){}
+  try{
+    const res=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:280,
+        system:'Você cria questões para o exame teórico do DETRAN brasileiro (CTB). Dado um conceito, crie 1 questão de múltipla escolha com 4 alternativas no estilo oficial do exame. Pode incluir pegadinhas e situações reais de trânsito. Retorne APENAS JSON válido:\n{"txt":"pergunta","opts":["A","B","C","D"],"c":0}\nOnde c é o índice (0-3) da resposta correta. Alternativas plausíveis, linguagem formal do CTB.',
+        messages:[{role:'user',content:'Conceito: '+concept.name+'\nRegra: '+(concept.teach&&concept.teach.rule||'')+'\nDetalhe: '+(concept.teach&&concept.teach.body||'')}]
+      })
+    });
+    if(!res.ok) return null;
+    const data=await res.json();
+    const raw=(data.content&&data.content[0]&&data.content[0].text||'[]').replace(/```json|```/g,'').trim();
+    const q=JSON.parse(raw);
+    if(q&&q.txt&&Array.isArray(q.opts)&&q.opts.length===4&&typeof q.c==='number'){
+      try{ sessionStorage.setItem(sessionKey,JSON.stringify(q)); }catch(e){}
+      return q;
+    }
+  }catch(e){}
+  return null;
+}
+
 function goQuestion(){
   G.answered=false;
+  _currentAIQuestion=null;
   const concept=getConceptById(G.curConceptId);
   const c=G.concepts[concept.id];
   G.curQIdx=concept.questions.length>1?(c.attempts%concept.questions.length):0;
   renderQuestion(false);
+  // Gerar questão IA em background — se chegar antes de responder, substitui
+  const apiKey=localStorage.getItem('dq_anthropic_key');
+  if(apiKey&&concept&&!_aiQGenerating){
+    _aiQGenerating=true;
+    generateAIQuestion(concept).then(q=>{
+      _aiQGenerating=false;
+      if(q&&!G.answered&&G.curConceptId===concept.id){
+        _currentAIQuestion=q;
+        // Atualizar só o texto e opções sem resetar timer
+        const qEl=document.getElementById('flow-q-txt');
+        const optsEl=document.getElementById('opts');
+        if(qEl&&optsEl&&!G.answered){
+          const sh=[0,1,2,3];
+          for(let i=sh.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[sh[i],sh[j]]=[sh[j],sh[i]];}
+          const cm=sh.indexOf(q.c);
+          _shuffled=sh; _correctMapped=cm;
+          qEl.textContent=q.txt;
+          optsEl.innerHTML=sh.map((origIdx,pos)=>`<button class="opt-flow" id="opt${pos}" onclick="answerQ(${pos},${cm})">${q.opts[origIdx]}</button>`).join('');
+          _lastQText=q.txt;
+        }
+      }
+    }).catch(()=>{ _aiQGenerating=false; });
+  }
 }
 
 function renderQuestion(isRetry){
@@ -8685,7 +8744,7 @@ function renderQuestion(isRetry){
   </div>
   <div class="t-bar-wrap"><div class="t-bar" id="tbar" style="width:100%"></div></div>
   ${(()=>{const _img=getQuestionImage(variedText);return _img?`<div style="text-align:center;margin-bottom:10px"><img src="${_img.url}" alt="${_img.alt}" style="max-height:90px;max-width:160px;border-radius:10px;opacity:.92" onerror="this.style.display='none'" loading="lazy"><div style="font-size:10px;color:var(--mu);margin-top:4px">${_img.alt}</div></div>`:''})()}
-  <div class="flow-title-sm">${variedText}</div>
+  <div class="flow-title-sm" id="flow-q-txt">${variedText}</div>
   <div id="opts">${sh.map((origIdx,pos)=>`<button class="opt-flow" id="opt${pos}" onclick="answerQ(${pos},${cm})">${Q.opts[origIdx]}</button>`).join('')}</div>
   <div style="text-align:center;margin-top:4px;padding-top:8px;border-top:1px solid var(--brd)">${_pctHtml}</div>
   <div id="fb" class="hide"></div>
