@@ -442,7 +442,7 @@ const CONCEPTS = [
   teach:{icon:'⚠️',title:'Os 4 níveis de infração de trânsito',
     body:'O CTB divide as infrações por <b>gravidade do risco</b> que você causa. Quanto maior o risco, mais pontos você perde na CNH.',
     rule:'Leve = 3 pts • Média = 4 pts • Grave = 5 pts • Gravíssima = 7 pts',
-    eOk:{tag:'✅ Exemplo',txt:'Estacionar em local proibido = Média (4 pts). Risco moderado, punição intermediária.'},
+    eOk:{tag:'✅ Exemplo',txt:'Não usar luz baixa em túnel = Leve (3 pts). Risco baixo, punição leve.'},
     eKo:{tag:'❌ Não confunda',txt:'Achar que todas as infrações valem o mesmo. Cada uma tem nível e pontos distintos.'}},
   reteach:{icon:'🪜',title:'Pensa numa escada de 4 degraus',
     body:'Imagine uma escada: degrau 1 (Leve) é o mais baixo, degrau 4 (Gravíssima) é o mais alto. <b>Quanto mais alto o degrau, mais grave o risco e mais pontos você perde.</b> 3, 4, 5, 7 — os números crescem conforme o perigo aumenta.',
@@ -9325,6 +9325,7 @@ function openSensei(){
   const conceptId=G.curConceptId||getNextConceptId();
   const concept=getConceptById(conceptId);
   _senseiHistory=[];
+  checkForUpdates(); // verifica atualizações ao abrir o Sensei
   document.getElementById('sensei-overlay').classList.remove('hide');
   document.getElementById('sensei-context').textContent=concept?concept.name:'';
   const chat=document.getElementById('sc-chat');
@@ -9671,7 +9672,7 @@ function startUpdateChecker(){
   checkForUpdates();
   if(_updateCheckInt) clearInterval(_updateCheckInt);
   // Verifica a cada 5 minutos e ao voltar para o app
-  _updateCheckInt=setInterval(checkForUpdates, 5*60*1000);
+  _updateCheckInt=setInterval(checkForUpdates, 60*1000); // verifica a cada 1 minuto
   document.addEventListener('visibilitychange',()=>{ if(!document.hidden) checkForUpdates(); });
 }
 
