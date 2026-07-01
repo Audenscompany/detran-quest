@@ -260,6 +260,9 @@ body.theme-arcade_fight .play-btn,body.theme-arcade_fight .login-title{text-shad
 .sc-send:disabled{opacity:.35;cursor:default;}
 .sc-footer{font-size:10px;color:var(--mu);text-align:center;margin-top:6px;}
 .sc-footer a{color:var(--pu2);cursor:pointer;font-weight:700;}
+/* ═══ EXAM TOMORROW ═══ */
+.exam-fab{position:fixed;bottom:155px;right:14px;background:linear-gradient(135deg,#e5484d,#9b2226);color:#fff;border:none;border-radius:99px;padding:8px 14px;font-size:11px;font-weight:800;cursor:pointer;z-index:80;box-shadow:0 4px 14px rgba(229,72,77,.5);white-space:nowrap;animation:pulseUpdate 1.5s ease-in-out infinite;}
+.exam-fab.active{background:linear-gradient(135deg,#4ecda4,#1a6e52);animation:none;}
 /* ═══ UPDATE BUTTON ═══ */
 .update-fab{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:linear-gradient(135deg,#1fa876,#1a6e52);color:#fff;border:none;border-radius:99px;padding:9px 18px;font-size:13px;font-weight:800;cursor:pointer;z-index:200;box-shadow:0 4px 18px rgba(31,168,118,.45);animation:pulseUpdate 2s ease-in-out infinite;white-space:nowrap;}
 @keyframes pulseUpdate{0%,100%{box-shadow:0 4px 18px rgba(31,168,118,.45);}50%{box-shadow:0 4px 28px rgba(31,168,118,.8);}}
@@ -6911,6 +6914,10 @@ function freshState(){
     lastTickTime:Date.now(),
     seenQKeys:[], // "conceptId_qIdx" — questões já exibidas (REGRA ABSOLUTA: jamais repetir se acertada)
     sessionHistory:[], // [{date, questionsAnswered, durationMs}]
+    reactionTimes:{}, // conceptId → [ms, ms, ms] últimas 5 reações
+    adhdMode:true, // modo TDAH ativo por padrão
+    examTomorrow:false, // modo emergência ativado pelo usuário
+    weaknessScore:{}, // conceptId → score composto (erros + reação lenta)
     bossesDefeated:[], // topics com 1ª vitória (badge)
     bossWave:{}, // quantas ondas de chefão já venceu, por tópico
     bossWaveSnapshot:{}, // quantos conceitos tentados na última onda, por tópico (controla quando a próxima onda libera)
@@ -7974,71 +7981,59 @@ function isReviewDue(c,qCount){
 // por tempo/contagem (que reabria conceitos dominados sozinha, sem o aluno ter
 // errado nada) foi removida — a repetição espaçada agora nasce do desempenho
 // real no simulado, nunca de um relógio interno.
+function getWeaknessScoreFor(id){
+  if(!G.weaknessScore||!G.weaknessScore[id]) return 0;
+  return G.weaknessScore[id];
+}
+
 function getNextConceptId(){
   ensureConceptIntegrity();
   const qCount=G.totalQ;
+  const seenCorrectly=(id)=>G.seenQKeys.includes(id+'_0')&&!G.errorBank.find(e=>e.conceptId===id);
+  const examMode=G.examTomorrow||false;
 
-  // ══════════════════════════════════════════════════════════
-  // REGRA ABSOLUTA: questão já vista E sem erro pendente → JAMAIS repetir no fluxo normal.
-  // seenCorrectly(id) = true  ⟹  não entra em nenhuma regra de repetição.
-  // Só pode voltar se: (a) errou a questão → fica no errorBank, ou
-  //                    (b) errou no simulado → status cai de 'dominado' + reentra no errorBank.
-  // ══════════════════════════════════════════════════════════
-  const seenCorrectly=(id)=>
-    G.seenQKeys.includes(id+'_0') && !G.errorBank.find(e=>e.conceptId===id);
+  // ── MODO EXAME AMANHÃ: foca nos mais fracos imediatamente ──
+  if(examMode){
+    const errSorted=CONCEPTS.filter(c=>G.errorBank.find(e=>e.conceptId===c.id))
+      .sort((a,b)=>getWeaknessScoreFor(b.id)-getWeaknessScoreFor(a.id));
+    if(errSorted.length>0) return errSorted[0].id;
+    const nextUnseen=CONCEPTS.find(c=>!G.seenQKeys.includes(c.id+'_0'));
+    if(nextUnseen) return nextUnseen.id;
+    const weakSorted=CONCEPTS.filter(c=>G.concepts[c.id].status!=='dominado'&&getWeaknessScoreFor(c.id)>10)
+      .sort((a,b)=>getWeaknessScoreFor(b.id)-getWeaknessScoreFor(a.id));
+    if(weakSorted.length>0) return weakSorted[0].id;
+    return null;
+  }
 
-  // 1) Revisão pendente SOMENTE para conceitos com erro ainda no banco (acertados não voltam).
-  const dueReview=Object.entries(G.concepts).find(([id,c])=>
-    isReviewDue(c,qCount) && c.status!=='dominado' && G.errorBank.find(e=>e.conceptId===id)
-  );
-  if(dueReview) return dueReview[0];
+  // ── MODO NORMAL: algoritmo por weaknessScore (erro + tempo de reação) ──
+  // 1) Revisão com erro — pior primeiro
+  const dueReviews=Object.entries(G.concepts)
+    .filter(([id,c])=>isReviewDue(c,qCount)&&c.status!=='dominado'&&G.errorBank.find(e=>e.conceptId===id))
+    .sort((a,b)=>getWeaknessScoreFor(b[0])-getWeaknessScoreFor(a[0]));
+  if(dueReviews.length>0) return dueReviews[0][0];
 
-  // 2) PRIORIDADE MÁXIMA: questões ainda não exibidas em nenhuma sessão.
-  //    Usa a ordem do array CONCEPTS para garantir progressão linear e previsível.
+  // 2) Nunca visto
   const nextUnseen=CONCEPTS.find(c=>!G.seenQKeys.includes(c.id+'_0'));
   if(nextUnseen) return nextUnseen.id;
 
-  // 3) Questões vistas com erro pendente (foi visto mas errou → pode repetir para aprender).
-  const withError=CONCEPTS.find(c=>
-    G.errorBank.find(e=>e.conceptId===c.id) && G.concepts[c.id].status!=='dominado'
-  );
-  if(withError) return withError.id;
+  // 3) Com erro pendente — mais fraco primeiro
+  const withError=CONCEPTS.filter(c=>G.errorBank.find(e=>e.conceptId===c.id)&&G.concepts[c.id].status!=='dominado')
+    .sort((a,b)=>getWeaknessScoreFor(b.id)-getWeaknessScoreFor(a.id));
+  if(withError.length>0) return withError[0].id;
 
-  // 4) Conceitos críticos não-dominados e ainda não acertados de forma limpa.
-  const critical=getHighestDifficultyConcept(false,55);
-  if(critical && !seenCorrectly(critical)){
-    const c=G.concepts[critical];
-    if(c.timesWrong<8) return critical;
-  }
+  // 4) Lentidão alta = insegurança mesmo sem erro
+  const slowUnsure=CONCEPTS.filter(c=>!seenCorrectly(c.id)&&G.concepts[c.id].status!=='dominado'&&getWeaknessScoreFor(c.id)>20)
+    .sort((a,b)=>getWeaknessScoreFor(b.id)-getWeaknessScoreFor(a.id));
+  if(slowUnsure.length>0) return slowUnsure[0].id;
 
-  // 5) Qualquer não-dominado que ainda não foi visto corretamente.
+  // 5) Qualquer não dominado
   const weakest=getHighestDifficultyConcept(false,0);
-  if(weakest && !seenCorrectly(weakest)) return weakest;
+  if(weakest&&!seenCorrectly(weakest)) return weakest;
 
-  // 6) Tudo visto e acertado → sem mais conteúdo novo. Quem chama mostra tela de simulado.
   return null;
 }
 
 
-function pickQuestionVariation(conceptId,baseQ,qIdx){
-  const extras=CONCEPT_EXTRAS[conceptId];
-  if(!extras||!extras.variations||extras.variations.length===0) return baseQ.txt;
-  // Variações agora são objetos {text, forQIdx} — só usamos as que pertencem à questão atual (mesmas alternativas).
-  // Suporte legado: se vier string pura (formato antigo), só aplica quando a questão é a primeira (qIdx===0),
-  // pra nunca acoplar uma variação à pergunta errada.
-  const candidates=extras.variations.filter(v=>{
-    if(typeof v==='string') return qIdx===0;
-    return v.forQIdx===qIdx;
-  });
-  if(candidates.length===0) return baseQ.txt;
-  const key=conceptId+'_'+qIdx;
-  const last=_variationIdx[key];
-  let idx=Math.floor(Math.random()*candidates.length);
-  if(candidates.length>1 && idx===last) idx=(idx+1)%candidates.length;
-  _variationIdx[key]=idx;
-  const chosen=candidates[idx];
-  return typeof chosen==='string'?chosen:chosen.text;
-}
 
 // Quantos conceitos faltam até o próximo chefão (a cada 10 conceitos tentados de um tópico-base)
 function progressToNextMilestone(g){
@@ -8759,6 +8754,19 @@ function renderQuestion(isRetry){
     _skipFab.onclick=toggleSkipMenu;
     document.body.appendChild(_skipFab);
   } else { _skipFab.classList.remove('hide'); }
+  // Botão Exame Amanhã
+  let _examFab=document.getElementById('exam-fab');
+  if(!_examFab){
+    _examFab=document.createElement('button');
+    _examFab.id='exam-fab';
+    _examFab.className='exam-fab'+(G.examTomorrow?' active':'');
+    _examFab.textContent=G.examTomorrow?'🚨 Modo Exame ON':'🚨 Exame Amanhã';
+    _examFab.onclick=toggleExamMode;
+    document.body.appendChild(_examFab);
+  } else {
+    _examFab.className='exam-fab'+(G.examTomorrow?' active':'');
+    _examFab.textContent=G.examTomorrow?'🚨 Modo Exame ON':'🚨 Exame Amanhã';
+  }
   startTimer(Q,cm);
 }
 
@@ -8910,6 +8918,17 @@ function processAnswer(ok,elapsedSec,wasGuess){
   c.lastSeen=G.totalQ;
   c.status=conceptStatus(c);
   markPracticed(concept.id,ok);
+  // ── Tracking de tempo de reação (algoritmo TDAH + priorização) ──
+  if(!G.reactionTimes) G.reactionTimes={};
+  if(!G.reactionTimes[concept.id]) G.reactionTimes[concept.id]=[];
+  G.reactionTimes[concept.id].push(Math.round(elapsedSec*1000));
+  if(G.reactionTimes[concept.id].length>5) G.reactionTimes[concept.id].shift(); // mantém só últimas 5
+  // ── WeaknessScore: combinação de erro + lentidão (base do algoritmo) ──
+  if(!G.weaknessScore) G.weaknessScore={};
+  const avgReact=G.reactionTimes[concept.id].reduce((a,b)=>a+b,0)/G.reactionTimes[concept.id].length;
+  const errorRate=c.timesWrong/Math.max(c.attempts,1);
+  const slownessPenalty=Math.min(1, Math.max(0,(avgReact-8000)/22000)); // 0=rápido, 1=muito lento
+  G.weaknessScore[concept.id]=Math.round((errorRate*0.65 + slownessPenalty*0.35)*100);
 
   G.totalQ++;
   G.questionsAnswered++;
@@ -8949,6 +8968,7 @@ function processAnswer(ok,elapsedSec,wasGuess){
   checkAchievements();
   checkThemeUnlocks();
   maybeTriggerBoss(concept.topic);
+  showReactionFeedback(elapsedSec,ok);
   saveGame();
 }
 
@@ -9900,6 +9920,43 @@ function skipNQuestions(n){
   saveGame();
   showToast('⏭ '+skipped+' questão'+(skipped!==1?'ões':'')+' pulada'+(skipped!==1?'s':'')+'. Continuando...');
   setTimeout(()=>nextStep(),400);
+}
+
+// ═══ MODO EXAME AMANHÃ + TDAH ═══
+function toggleExamMode(){
+  G.examTomorrow=!G.examTomorrow;
+  saveGame();
+  const fab=document.getElementById('exam-fab');
+  if(fab){
+    fab.className='exam-fab'+(G.examTomorrow?' active':'');
+    fab.textContent=G.examTomorrow?'🚨 Modo Exame ON':'🚨 Exame Amanhã';
+  }
+  if(G.examTomorrow){
+    // Reordenar imediatamente para os mais fracos
+    const weakest=getNextConceptId();
+    if(weakest){
+      G.curConceptId=weakest;
+      _smartQueue=[];
+      // Mostrar popup de modo exame
+      popup('🚨','Modo Exame Ativado!',
+        'O algoritmo agora prioriza seus pontos mais fracos com base em erros E tempo de reação. Questões difíceis primeiro. Vamos focar no que garante sua aprovação!',
+        'Bora estudar!',()=>{ closeSensei&&closeSensei(); startLearningFlow(weakest); },null,null);
+    }
+  } else {
+    showToast('Modo exame desativado — voltando ao fluxo normal');
+  }
+}
+
+// Feedback de tempo de reação na UI após responder
+function showReactionFeedback(elapsedSec,ok){
+  if(!G.adhdMode) return;
+  if(elapsedSec<8 && ok) return; // rápido e certo: sem comentário
+  let msg='';
+  if(!ok && elapsedSec<5) msg='⚡ Rápido mas errou — cuidado com as pegadinhas!';
+  else if(!ok && elapsedSec>18) msg='⏰ Demorou e errou — esse conceito precisa de atenção.';
+  else if(ok && elapsedSec>20) msg='✅ Acertou! Mas demorou — treina mais esse conceito.';
+  else if(!ok) msg='💪 Erro registrado — vai voltar para você treinar.';
+  if(msg) showToast(msg);
 }
 
 let _skipMenuOpen=false;
