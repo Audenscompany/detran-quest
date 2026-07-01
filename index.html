@@ -8218,13 +8218,19 @@ function confirmMicroInfo(){
 // DISCOVERY — o aluno tenta prever a regra ANTES de ser ensinada
 // ───────────────────────────────────────────────
 function renderDiscovery(step){
+  const concept=getConceptById(_learningConceptId);
+  const realQ=concept&&concept.questions[0]?concept.questions[0].txt:'';
+  const isSame=realQ&&step.question.trim()===realQ.trim();
+  const questionText=isSame?'Antes de aprender — '+step.question:step.question;
   document.getElementById('game-area').innerHTML=`
-<div class="flow-card learn-flow">
-  <div class="flow-tag">🔍 Antes de eu te dizer... o que você acha?</div>
-  <div class="flow-title-sm">${step.question}</div>
-  <div id="opts">${step.options.map((o,i)=>`<button class="opt-flow" onclick="answerDiscovery(${i},${step.correct},'${(step.feedback||'').replace(/'/g,"\\'")}')">${o}</button>`).join('')}</div>
+<div class="flow-card learn-flow" style="border-color:rgba(139,92,246,.3)">
+  <div class="flow-tag" style="color:#a78bfa">🔍 Teste seu conhecimento prévio</div>
+  <div style="font-size:10px;color:var(--mu);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Você ainda não viu a explicação</div>
+  <div class="flow-title-sm">${questionText}</div>
+  <div id="opts">${step.options.map((o,i)=>`<button class="opt-flow" onclick="answerDiscovery(${i},${step.correct},'${(step.feedback||'').replace(/'/g,"\'")}')">${o}</button>`).join('')}</div>
 </div>`;
 }
+
 function answerDiscovery(pos,correct,feedback){
   const ok=pos===correct;
   document.querySelectorAll('#opts .opt-flow').forEach((b,i)=>{
@@ -8617,6 +8623,12 @@ function renderQuestion(isRetry){
   }
   const sh=_shuffled,cm=_correctMapped;
 
+  // Indicador de % de acerto para este conceito
+  const _c=G.concepts[concept.id];
+  const _pct=_c&&_c.attempts>0?Math.round((_c.timesRight/Math.max(_c.attempts,1))*100):null;
+  const _pctHtml=_pct===null
+    ? '<span style="font-size:10px;color:var(--mu);font-weight:600">⭐ Primeira vez</span>'
+    : `<span style="font-size:10px;font-weight:700;color:${_pct>=80?'#4ecda4':_pct>=50?'#f5a623':'#e5484d'}">${_pct>=80?'🟢':_pct>=50?'🟡':'🔴'} Seu acerto neste tema: <b>${_pct}%</b></span>`;
   document.getElementById('game-area').innerHTML=`
 <div class="flow-card question-flow">
   <div class="flow-top-row">
@@ -8626,6 +8638,7 @@ function renderQuestion(isRetry){
   <div class="t-bar-wrap"><div class="t-bar" id="tbar" style="width:100%"></div></div>
   <div class="flow-title-sm">${variedText}</div>
   <div id="opts">${sh.map((origIdx,pos)=>`<button class="opt-flow" id="opt${pos}" onclick="answerQ(${pos},${cm})">${Q.opts[origIdx]}</button>`).join('')}</div>
+  <div style="text-align:center;margin-top:4px;padding-top:8px;border-top:1px solid var(--brd)">${_pctHtml}</div>
   <div id="fb" class="hide"></div>
 </div>`;
   // Botão flutuante de pular (acima do Sensei)
