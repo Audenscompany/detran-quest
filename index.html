@@ -8004,17 +8004,27 @@ function getNextConceptId(){
   const qCount=G.totalQ;
   const seenCorrectly=(id)=>G.seenQKeys.includes(id+'_0')&&!G.errorBank.find(e=>e.conceptId===id);
   const examMode=G.examTomorrow||false;
+  // Não mostrar conceito recente (anti-loop) nem snoozado pelo skip
+  const isBlocked=(id)=>_recentConcepts.includes(id)||_sessionSnoozed.has(id);
 
-  // ── MODO EXAME AMANHÃ: foca nos mais fracos imediatamente ──
+  // ── MODO EXAME AMANHÃ: alterna entre erros e conteúdo novo ──
   if(examMode){
-    const errSorted=CONCEPTS.filter(c=>G.errorBank.find(e=>e.conceptId===c.id))
+    // 1) Erro pendente NÃO bloqueado — pior primeiro
+    const errSorted=CONCEPTS.filter(c=>G.errorBank.find(e=>e.conceptId===c.id)&&!isBlocked(c.id))
       .sort((a,b)=>getWeaknessScoreFor(b.id)-getWeaknessScoreFor(a.id));
     if(errSorted.length>0) return errSorted[0].id;
-    const nextUnseen=CONCEPTS.find(c=>!G.seenQKeys.includes(c.id+'_0'));
+    // 2) Conteúdo nunca visto
+    const nextUnseen=CONCEPTS.find(c=>!G.seenQKeys.includes(c.id+'_0')&&!isBlocked(c.id));
     if(nextUnseen) return nextUnseen.id;
-    const weakSorted=CONCEPTS.filter(c=>G.concepts[c.id].status!=='dominado'&&getWeaknessScoreFor(c.id)>10)
+    // 3) Mais fraco não bloqueado
+    const weakSorted=CONCEPTS.filter(c=>G.concepts[c.id].status!=='dominado'&&!isBlocked(c.id)&&getWeaknessScoreFor(c.id)>10)
       .sort((a,b)=>getWeaknessScoreFor(b.id)-getWeaknessScoreFor(a.id));
     if(weakSorted.length>0) return weakSorted[0].id;
+    // 4) Fallback: limpar bloqueios e tentar de novo
+    _sessionSnoozed.clear(); _recentConcepts=[];
+    const errFallback=CONCEPTS.filter(c=>G.errorBank.find(e=>e.conceptId===c.id))
+      .sort((a,b)=>getWeaknessScoreFor(b.id)-getWeaknessScoreFor(a.id));
+    if(errFallback.length>0) return errFallback[0].id;
     return null;
   }
 
@@ -8131,6 +8141,11 @@ let _learningConceptId=null;
 let _stepProgress={}; // por conceito: quais tipos de step já foram cumpridos nesta passada
 
 function startLearningFlow(conceptId){
+  // Registrar no histórico recente (anti-loop — máx 3)
+  _recentConcepts=_recentConcepts.filter(id=>id!==conceptId);
+  _recentConcepts.push(conceptId);
+  if(_recentConcepts.length>3) _recentConcepts.shift();
+
   const concept=getConceptById(conceptId);
   if(!concept){ nextStep(); return; }
   _learningConceptId=conceptId;
@@ -8370,13 +8385,13 @@ function renderTrueFalse(step){
     <button class="opt-flow tf-btn" onclick="answerTrueFalse(false,${step.correct})">Falso</button>
   </div>
 </div>`;
-  // Safety net: se ficou 30s sem resposta, avança automaticamente
+  // Safety net: se ficou 8s nesta tela, avança independente
   window._tfSafetyTimer=setTimeout(()=>{
     const btns=document.querySelectorAll('.tf-btn');
-    if(btns.length>0&&!btns[0].disabled){ // ainda na mesma tela
+    if(btns.length>0){ // ainda na mesma tela
       try{ advanceLearningStep(); }catch(e){ try{ nextStep(); }catch(_){} }
     }
-  },30000);
+  },8000);
 }
 function answerTrueFalse(answer,correct){
   try{
@@ -9109,6 +9124,8 @@ function maybeTriggerBoss(topic){
 }
 
 let _bossQs=[],_bossIdx=0,_bossHP=100,_bossPlayerHP=100,_bossTopic=null,_inBossFight=false;
+let _recentConcepts=[]; // últimos 3 conceitos mostrados — evita repetição imediata
+let _sessionSnoozed=new Set(); // conceitos adiados pelo skip nesta sessão
 
 function startBossBattle(topic){
   G._bossQueued=false;
@@ -10002,12 +10019,15 @@ function getQuestionImage(questionText){
 function skipNQuestions(n){
   closeSkipMenu();
   let skipped=0;
+  const skippedIds=new Set();
   for(let i=0;i<n;i++){
     const cId=getNextConceptId();
     if(!cId) break;
+    if(skippedIds.has(cId)&&skippedIds.size>0) break; // evitou loop
+    skippedIds.add(cId);
+    _sessionSnoozed.add(cId); // adiar este conceito nesta sessão
     const key=cId+'_0';
     if(!G.seenQKeys.includes(key)) G.seenQKeys.push(key);
-    // Registra um attempt mínimo para o conceito não ficar órfão
     if(!G.concepts[cId]) G.concepts[cId]={attempts:0,timesRight:0,timesWrong:0,status:'novo',lastAttemptAt:null,dueAtQuestionCount:null,reviewStage:0};
     G.concepts[cId].attempts=(G.concepts[cId].attempts||0)+1;
     G.curConceptId=cId;
