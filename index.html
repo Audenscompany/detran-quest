@@ -9508,6 +9508,9 @@ function loadSenseiMemory(){
 function openSensei(){
   const conceptId=G.curConceptId||getNextConceptId();
   const concept=getConceptById(conceptId);
+  // Restaurar chaves do Cache API se localStorage foi limpo pelo iOS
+  loadPersistedKey('dq_anthropic_key').then(k=>{ if(k&&!localStorage.getItem('dq_anthropic_key')){ localStorage.setItem('dq_anthropic_key',k); scUpdateFooter(); }});
+  loadPersistedKey(DQ_GH_PAT).then(k=>{ if(k&&!localStorage.getItem(DQ_GH_PAT)){ localStorage.setItem(DQ_GH_PAT,k); scUpdateFooter(); }});
   checkForUpdates(); // verifica atualizações ao abrir o Sensei
   document.getElementById('sensei-overlay').classList.remove('hide');
   document.getElementById('sensei-context').textContent=concept?concept.name:'';
@@ -9545,18 +9548,58 @@ function scUpdateFooter(){
 }
 
 function scRemoveKey(){
-  localStorage.removeItem('dq_anthropic_key');
+  deletePersistedKey('dq_anthropic_key');
   scUpdateFooter();
-  scAppendBubble('ai','Chave removida. Você pode configurar novamente quando quiser.');
+  scAppendBubble('ai','Chave removida de todos os armazenamentos.');
+}
+
+const DQ_KEY_CACHE='dq-keys-v1';
+
+async function persistKey(name,value){
+  try{ localStorage.setItem(name,value); }catch(e){}
+  try{
+    if('caches' in window){
+      const cache=await caches.open(DQ_KEY_CACHE);
+      await cache.put('/dq-key/'+name, new Response(value,{headers:{'Content-Type':'text/plain'}}));
+    }
+  }catch(e){}
+}
+
+async function loadPersistedKey(name){
+  // Tenta localStorage primeiro
+  const ls=localStorage.getItem(name);
+  if(ls) return ls;
+  // Fallback: Cache API
+  try{
+    if('caches' in window){
+      const cache=await caches.open(DQ_KEY_CACHE);
+      const res=await cache.match('/dq-key/'+name);
+      if(res){
+        const val=await res.text();
+        if(val){ try{ localStorage.setItem(name,val); }catch(e){} return val; }
+      }
+    }
+  }catch(e){}
+  return null;
+}
+
+async function deletePersistedKey(name){
+  try{ localStorage.removeItem(name); }catch(e){}
+  try{
+    if('caches' in window){
+      const cache=await caches.open(DQ_KEY_CACHE);
+      await cache.delete('/dq-key/'+name);
+    }
+  }catch(e){}
 }
 
 function setupSenseiKey(){
-  const k=(prompt('Cole sua chave da API Anthropic (começa com sk-ant-):\n\nEla fica salva só neste dispositivo, nunca vai para nenhum servidor nosso.')||'').trim();
+  const k=(prompt('Cole sua chave da API Anthropic (começa com sk-ant-):\n\nFica salva permanentemente neste dispositivo, só removível nas configurações.')||'').trim();
   if(!k) return;
   if(k.startsWith('sk-ant-')||k.startsWith('sk-')){
-    localStorage.setItem('dq_anthropic_key',k);
+    persistKey('dq_anthropic_key',k);
     scUpdateFooter();
-    scAppendBubble('ai','✅ Chave configurada! Agora pode digitar qualquer dúvida livremente.');
+    scAppendBubble('ai','✅ Chave salva permanentemente! Só sai se você remover nas configurações.');
   } else {
     scAppendBubble('ai','❌ Chave inválida. Precisa começar com <b>sk-ant-</b>');
   }
@@ -9976,8 +10019,8 @@ async function sendChangeRequest(requestText){
 function setupGHPat(){
   const k=(prompt('Cole seu GitHub Personal Access Token:\n(o mesmo que usamos para commitar as mudanças)')||'').trim();
   if(!k) return;
-  localStorage.setItem(DQ_GH_PAT,k);
-  scAppendBubble('ai','✅ PAT configurado! Agora você pode pedir mudanças diretamente aqui no chat.');
+  persistKey(DQ_GH_PAT,k);
+  scAppendBubble('ai','✅ PAT salvo permanentemente! Só sai se remover nas configurações.');
 }
 
 // ═══ IMAGENS CONTEXTUAIS NAS QUESTÕES ═══
