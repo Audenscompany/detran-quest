@@ -8636,6 +8636,7 @@ function renderQuestion(isRetry){
     <span class="timer-flow" id="tnum">⏱30</span>
   </div>
   <div class="t-bar-wrap"><div class="t-bar" id="tbar" style="width:100%"></div></div>
+  ${(()=>{const _img=getQuestionImage(variedText);return _img?`<div style="text-align:center;margin-bottom:10px"><img src="${_img.url}" alt="${_img.alt}" style="max-height:90px;max-width:160px;border-radius:10px;opacity:.92" onerror="this.style.display='none'" loading="lazy"><div style="font-size:10px;color:var(--mu);margin-top:4px">${_img.alt}</div></div>`:''})()}
   <div class="flow-title-sm">${variedText}</div>
   <div id="opts">${sh.map((origIdx,pos)=>`<button class="opt-flow" id="opt${pos}" onclick="answerQ(${pos},${cm})">${Q.opts[origIdx]}</button>`).join('')}</div>
   <div style="text-align:center;margin-top:4px;padding-top:8px;border-top:1px solid var(--brd)">${_pctHtml}</div>
@@ -9708,6 +9709,41 @@ function setupGHPat(){
   if(!k) return;
   localStorage.setItem(DQ_GH_PAT,k);
   scAppendBubble('ai','✅ PAT configurado! Agora você pode pedir mudanças diretamente aqui no chat.');
+}
+
+// ═══ IMAGENS CONTEXTUAIS NAS QUESTÕES ═══
+const Q_IMAGE_MAP=[
+  {keys:['placa de pare','placa r-1','sinal de pare'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Placa_R-1.svg/120px-Placa_R-1.svg.png',alt:'Placa PARE'},
+  {keys:['placa de proibido','proibição','velocidade máxima','velocidade permitida'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Placa_R-19.svg/120px-Placa_R-19.svg.png',alt:'Placa de regulamentação'},
+  {keys:['semáforo','sinal luminoso','luz vermelha','luz verde','luz amarela'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/2/29/Semaforo.svg/60px-Semaforo.svg.png',alt:'Semáforo'},
+  {keys:['faixa de pedestre','travessia de pedestres','passagem para pedestres'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a2/Placa_A-32a.svg/120px-Placa_A-32a.svg.png',alt:'Faixa de pedestre'},
+  {keys:['ciclista','ciclovia','bicicleta','ciclofaixa'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/10/Placa_A-29.svg/120px-Placa_A-29.svg.png',alt:'Ciclista'},
+  {keys:['curva','curva perigosa','trecho sinuoso'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/4/4c/Placa_A-1a.svg/120px-Placa_A-1a.svg.png',alt:'Curva perigosa'},
+  {keys:['escola','zona escolar','criança'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Placa_A-33.svg/120px-Placa_A-33.svg.png',alt:'Zona escolar'},
+  {keys:['obras','trabalhadores','pista em obras'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/8/85/Placa_A-22.svg/120px-Placa_A-22.svg.png',alt:'Obras na pista'},
+  {keys:['animais','passagem de animais'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c7/Placa_A-26a.svg/120px-Placa_A-26a.svg.png',alt:'Animais na pista'},
+  {keys:['lombada','ondulação','quebra-molas'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6c/Placa_A-19.svg/120px-Placa_A-19.svg.png',alt:'Lombada'},
+  {keys:['ponto cego','ângulo morto','espelho','visão'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/01/Toter_Winkel.svg/180px-Toter_Winkel.svg.png',alt:'Ponto cego'},
+  {keys:['cinto de segurança','cinto'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a9/Seat_belt_icon.svg/80px-Seat_belt_icon.svg.png',alt:'Cinto de segurança'},
+  {keys:['capacete'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e8/Icon_DPPD_01.svg/80px-Icon_DPPD_01.svg.png',alt:'Capacete'},
+  {keys:['alcool','álcool','bafômetro','embriaguez','beber e dirigir'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Drunk_driving.svg/120px-Drunk_driving.svg.png',alt:'Álcool ao volante'},
+  {keys:['celular','telefone','aparelho','uso ao volante'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Phone_use_while_driving.svg/80px-Phone_use_while_driving.svg.png',alt:'Celular ao volante'},
+  {keys:['ultrapassagem','ultrapassar','faixa dupla','linha contínua'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/3/34/Placa_R-7.svg/120px-Placa_R-7.svg.png',alt:'Proibido ultrapassar'},
+  {keys:['estacionamento','parar e estacionar','estacionar'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/04/Placa_R-6a.svg/120px-Placa_R-6a.svg.png',alt:'Estacionamento'},
+  {keys:['preferencial','via preferencial','cruzamento','preferência'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/Placa_R-2.svg/120px-Placa_R-2.svg.png',alt:'Dê a preferência'},
+  {keys:['velocidade','limite de velocidade','excesso de velocidade'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/a/a4/Placa_R-19.svg/120px-Placa_R-19.svg.png',alt:'Limite de velocidade'},
+  {keys:['pedestre','passeio','calçada','passagem'],url:'https://upload.wikimedia.org/wikipedia/commons/thumb/6/6f/Pedestrian_Crossing_Sign.svg/90px-Pedestrian_Crossing_Sign.svg.png',alt:'Pedestre'},
+];
+
+function getQuestionImage(questionText){
+  const t=(questionText||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  for(const entry of Q_IMAGE_MAP){
+    if(entry.keys.some(k=>t.includes(k.normalize('NFD').replace(/[\u0300-\u036f]/g,'')))){
+      return entry;
+    }
+  }
+  // Fallback genérico por tópico
+  return null;
 }
 
 // ═══ SKIP / PULAR QUESTÕES ═══
