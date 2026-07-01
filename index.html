@@ -8393,10 +8393,20 @@ function nextStep(){
     // 4. Continua o ciclo normal — se não sobrou nada para ensinar (tudo
     // dominado, nada pendente de revisão por erro em simulado), mostra a
     // tela dedicada em vez de repetir conteúdo já dominado sem motivo.
-    const nextId=getNextConceptId();
+    let nextId=getNextConceptId();
     if(nextId===null){
-      showTudoDominadoScreen();
-      return;
+      // Segurança: verificar se ainda há conceito não visto antes de mostrar tela final
+      const emergencyUnseen=CONCEPTS.find(c=>G.concepts[c.id]&&G.concepts[c.id].status!=='dominado');
+      if(emergencyUnseen){
+        // Ainda há conceitos não dominados — resetar seenQKeys parcialmente e continuar
+        const notDominated=CONCEPTS.filter(c=>G.concepts[c.id]&&G.concepts[c.id].status!=='dominado');
+        const resetKeys=notDominated.map(c=>c.id+'_0');
+        G.seenQKeys=G.seenQKeys.filter(k=>!resetKeys.includes(k));
+        nextId=notDominated[0].id;
+      } else {
+        showTudoDominadoScreen();
+        return;
+      }
     }
     G.curConceptId=nextId;
     startLearningFlow(G.curConceptId);
@@ -8999,10 +9009,19 @@ function finishBoss(){
     const xp = firstWin ? 200 : 90; // primeira vitória vale mais; ondas seguintes ainda recompensam, sem virar farm
     addXP(xp,true);
     const title=firstWin?'Chefe derrotado!':'Chefe derrotado de novo!';
-    popup('🏆',title,`Você venceu o Chefe de ${TNAME[_bossTopic]}. +${xp} XP e seu Poder de Aprovação subiu.`,'Continuar',()=>nextStep(),null,null);
+    popup('🏆',title,`Você venceu o Chefe de ${TNAME[_bossTopic]}. +${xp} XP e seu Poder de Aprovação subiu.`,'Continuar',()=>{
+      // Garante que nextStep tem conceitos na fila para não travar
+      const unseenAfterBoss=CONCEPTS.filter(c=>!G.seenQKeys.includes(c.id+'_0')).slice(0,3);
+      if(unseenAfterBoss.length>0) _smartQueue=unseenAfterBoss.map(c=>c.id);
+      nextStep();
+    },null,null);
   } else {
     popup('💪','Quase lá!',`O Chefe de ${TNAME[_bossTopic]} resistiu dessa vez, mas você vai voltar mais forte. Vamos reforçar os pontos fracos.`,'Continuar',()=>{
-      _smartQueue=getTop3Weak(G).filter(id=>getConceptById(id).topic===_bossTopic);
+      _smartQueue=getTop3Weak(G).filter(id=>getConceptById(id)&&getConceptById(id).topic===_bossTopic);
+      // Fallback: sem fracos no tópico → usa próximos não vistos
+      if(_smartQueue.length===0){
+        _smartQueue=CONCEPTS.filter(c=>!G.seenQKeys.includes(c.id+'_0')).slice(0,3).map(c=>c.id);
+      }
       nextStep();
     },null,null);
   }
