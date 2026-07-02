@@ -448,6 +448,27 @@ body.theme-arcade_fight .play-btn,body.theme-arcade_fight .login-title{text-shad
 // ───────────────────────────────────────────────
 const CONCEPTS = [
 {
+  id:'lei_niveis', topic:'lei', topicName:'Legislação', name:'Os 4 níveis de infração',
+  teach:{icon:'⚠️',title:'Os 4 níveis de infração de trânsito',
+    body:'O CTB divide as infrações por <b>gravidade do risco</b> que você causa. Quanto maior o risco, mais pontos você perde na CNH.',
+    rule:'Leve = 3 pts • Média = 4 pts • Grave = 5 pts • Gravíssima = 7 pts',
+    eOk:{tag:'✅ Exemplo',txt:'Não usar luz baixa em túnel = Leve (3 pts). Risco baixo, punição leve.'},
+    eKo:{tag:'❌ Não confunda',txt:'Achar que todas as infrações valem o mesmo. Cada uma tem nível e pontos distintos.'}},
+  reteach:{icon:'🪜',title:'Pensa numa escada de 4 degraus',
+    body:'Imagine uma escada: degrau 1 (Leve) é o mais baixo, degrau 4 (Gravíssima) é o mais alto. <b>Quanto mais alto o degrau, mais grave o risco e mais pontos você perde.</b> 3, 4, 5, 7 — os números crescem conforme o perigo aumenta.',
+    rule:'Leve(3) → Média(4) → Grave(5) → Gravíssima(7). Sempre nessa ordem crescente.'},
+  questions:[
+    {txt:'Uma infração gerou 7 pontos na CNH do motorista. Qual é o nível dessa infração?',
+     opts:['Leve','Média','Grave','Gravíssima'],c:3,
+     why:'7 pontos = GRAVÍSSIMA. É o nível máximo. Leve=3, Média=4, Grave=5, Gravíssima=7.',
+     rule:'Leve=3 • Média=4 • Grave=5 • Gravíssima=7'},
+    {txt:'Qual o nível de infração que gera exatamente 4 pontos na CNH?',
+     opts:['Leve','Média','Grave','Gravíssima'],c:1,
+     why:'4 pontos = MÉDIA. A sequência é Leve(3), Média(4), Grave(5), Gravíssima(7).',
+     rule:'Leve=3 • Média=4 • Grave=5 • Gravíssima=7'},
+  ]
+},
+{
   id:'lei_alcool', topic:'lei', topicName:'Legislação', name:'Álcool ao volante',
   teach:{icon:'🍺',title:'Álcool ao volante — infração mais cobrada na prova',
     body:'<b>Tolerância zero.</b> Qualquer concentração de álcool detectada é infração. Acima do limite legal, a punição é máxima.',
@@ -6820,7 +6841,7 @@ const USERS={
 let CURRENT_USER_EMAIL=null; // definido no login bem-sucedido (doLogin ou tryAutoLogin)
 // !!! Ao mudar a versão abaixo, mude TAMBÉM o CACHE_VERSION em service-worker.js
 // (mesmo número) — é o que faz o navegador detectar a atualização sozinho. !!!
-const GAME_VERSION='7.2.3'; // v7.2.1: corrige recoveryTryRestore (loadGame não era aguardado com await, causando G nulo em iOS/Cache API); sanitiza saves com estado impossível (conceito "dominado" com 0 tentativas) e dessincronia entre concepts.attempts e conceptState.attempts. v7.2.0: fix menor de consistência. v7.1.0: criação de conta self-service na tela de login (antes só existiam 2 contas fixas escritas no código). E-mail só precisa ter formato válido (não precisa ser real, é só identificador local); senha precisa ter 4+ caracteres e confirmação. Contas criadas ficam salvas neste navegador (detranQuest_registeredUsers_v1) e funcionam com "manter conectado" igual às contas fixas. v7.0.0: 3º lote de conteúdo — 45 conceitos novos (176 no total), cobertura 76%→100% em todas as 11 matérias. Banco de questões de simulado em formato oficial (5 alternativas) com as 150 questões dos simulados reais do aluno + variações próprias, cobrindo 85 conceitos. REGRA NOVA: conceito 'dominado' nunca mais é perguntado no modo estudo — só reaparece se errado dentro de um simulado (eliminada a revisão automática por tempo/contagem que reabria conceitos já dominados sozinha). Elegibilidade de simulado agora exige 'dominado' de verdade (antes bastava 1 tentativa). Corrigido: vaga de PCD/idoso sem credencial agora é Gravíssima (era Grave por engano). v6.0.0: 2º lote de conteúdo — 50 conceitos novos (131 no total), cobertura de 48% para 76%, todas as 11 matérias com progresso real. v5.3.0: 7 temas visuais. v5.2.0: música de foco 40Hz. v5.1.0: PWA + múltiplas contas. v5.0.1: corrige tela preta + recuperação. v5.0.0: chefão dinâmico, revisão por dias, meta recalibrada
+const GAME_VERSION='7.2.4'; // v7.2.1: corrige recoveryTryRestore (loadGame não era aguardado com await, causando G nulo em iOS/Cache API); sanitiza saves com estado impossível (conceito "dominado" com 0 tentativas) e dessincronia entre concepts.attempts e conceptState.attempts. v7.2.0: fix menor de consistência. v7.1.0: criação de conta self-service na tela de login (antes só existiam 2 contas fixas escritas no código). E-mail só precisa ter formato válido (não precisa ser real, é só identificador local); senha precisa ter 4+ caracteres e confirmação. Contas criadas ficam salvas neste navegador (detranQuest_registeredUsers_v1) e funcionam com "manter conectado" igual às contas fixas. v7.0.0: 3º lote de conteúdo — 45 conceitos novos (176 no total), cobertura 76%→100% em todas as 11 matérias. Banco de questões de simulado em formato oficial (5 alternativas) com as 150 questões dos simulados reais do aluno + variações próprias, cobrindo 85 conceitos. REGRA NOVA: conceito 'dominado' nunca mais é perguntado no modo estudo — só reaparece se errado dentro de um simulado (eliminada a revisão automática por tempo/contagem que reabria conceitos já dominados sozinha). Elegibilidade de simulado agora exige 'dominado' de verdade (antes bastava 1 tentativa). Corrigido: vaga de PCD/idoso sem credencial agora é Gravíssima (era Grave por engano). v6.0.0: 2º lote de conteúdo — 50 conceitos novos (131 no total), cobertura de 48% para 76%, todas as 11 matérias com progresso real. v5.3.0: 7 temas visuais. v5.2.0: música de foco 40Hz. v5.1.0: PWA + múltiplas contas. v5.0.1: corrige tela preta + recuperação. v5.0.0: chefão dinâmico, revisão por dias, meta recalibrada
 const SAVE_SCHEMA_VERSION=1; // versão do FORMATO do save — só muda quando estrutura de dados muda de fato
 const AUTH_KEY='detranQuest_auth_v3'; // hash simples local, nunca enviado a servidor
 const AUTH_USER_KEY='detranQuest_authUser_v1'; // qual e-mail está com login automático ativo neste dispositivo
@@ -8326,7 +8347,7 @@ function renderDiscovery(step){
   const concept=getConceptById(_learningConceptId);
   const realQ=concept&&concept.questions[0]?concept.questions[0].txt:'';
   const isSame=realQ&&step.question.trim()===realQ.trim();
-  const makeOpts=()=>step.options.map((o,i)=>`<button class="opt-flow" onclick="answerDiscovery(${i},${step.correct},'${(step.feedback||'').replace(/'/g,"\\'")}')">` +o+`</button>`).join('');
+  const makeOpts=()=>step.options.map((o,i)=>`<button class="opt-flow" onclick="answerDiscovery(${i},${step.correct},'${(step.feedback||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">` +o+`</button>`).join('');
 
   const renderWith=(qText)=>{
     document.getElementById('game-area').innerHTML=`<div class="flow-card learn-flow" style="border-color:rgba(139,92,246,.3)"><div class="flow-tag" style="color:#a78bfa">🔍 Teste seu conhecimento prévio</div><div style="font-size:10px;color:var(--mu);margin-bottom:8px;font-weight:600;text-transform:uppercase;letter-spacing:.5px">Antes de ver a explicação — tente responder</div><div class="flow-title-sm" id="disc-q-text">${qText}</div><div id="opts">${makeOpts()}</div></div>`;
