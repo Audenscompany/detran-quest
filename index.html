@@ -448,27 +448,6 @@ body.theme-arcade_fight .play-btn,body.theme-arcade_fight .login-title{text-shad
 // ───────────────────────────────────────────────
 const CONCEPTS = [
 {
-  id:'lei_niveis', topic:'lei', topicName:'Legislação', name:'Os 4 níveis de infração',
-  teach:{icon:'⚠️',title:'Os 4 níveis de infração de trânsito',
-    body:'O CTB divide as infrações por <b>gravidade do risco</b> que você causa. Quanto maior o risco, mais pontos você perde na CNH.',
-    rule:'Leve = 3 pts • Média = 4 pts • Grave = 5 pts • Gravíssima = 7 pts',
-    eOk:{tag:'✅ Exemplo',txt:'Não usar luz baixa em túnel = Leve (3 pts). Risco baixo, punição leve.'},
-    eKo:{tag:'❌ Não confunda',txt:'Achar que todas as infrações valem o mesmo. Cada uma tem nível e pontos distintos.'}},
-  reteach:{icon:'🪜',title:'Pensa numa escada de 4 degraus',
-    body:'Imagine uma escada: degrau 1 (Leve) é o mais baixo, degrau 4 (Gravíssima) é o mais alto. <b>Quanto mais alto o degrau, mais grave o risco e mais pontos você perde.</b> 3, 4, 5, 7 — os números crescem conforme o perigo aumenta.',
-    rule:'Leve(3) → Média(4) → Grave(5) → Gravíssima(7). Sempre nessa ordem crescente.'},
-  questions:[
-    {txt:'Uma infração gerou 7 pontos na CNH do motorista. Qual é o nível dessa infração?',
-     opts:['Leve','Média','Grave','Gravíssima'],c:3,
-     why:'7 pontos = GRAVÍSSIMA. É o nível máximo. Leve=3, Média=4, Grave=5, Gravíssima=7.',
-     rule:'Leve=3 • Média=4 • Grave=5 • Gravíssima=7'},
-    {txt:'Qual o nível de infração que gera exatamente 4 pontos na CNH?',
-     opts:['Leve','Média','Grave','Gravíssima'],c:1,
-     why:'4 pontos = MÉDIA. A sequência é Leve(3), Média(4), Grave(5), Gravíssima(7).',
-     rule:'Leve=3 • Média=4 • Grave=5 • Gravíssima=7'},
-  ]
-},
-{
   id:'lei_alcool', topic:'lei', topicName:'Legislação', name:'Álcool ao volante',
   teach:{icon:'🍺',title:'Álcool ao volante — infração mais cobrada na prova',
     body:'<b>Tolerância zero.</b> Qualquer concentração de álcool detectada é infração. Acima do limite legal, a punição é máxima.',
@@ -1018,8 +997,11 @@ const CONCEPT_EXTRAS = {
     miniPergunta:{txt:'Qual a ordem crescente correta de pontos?',opts:['7,5,4,3','3,4,5,7','4,3,7,5','5,4,3,7'],c:1},
     cartaTitulo:'Os 4 Níveis',
     variations:[
-      // Q0 — resposta correta é "Média" (4 pts)
-      {forQIdx:0,text:'Uma infração gera exatamente 4 pontos na CNH. Qual é a classificação dela?'},
+      // Q0 — resposta correta é "Gravíssima" (7 pts)
+      {forQIdx:0,text:'Uma infração gerou 7 pontos na CNH. Que nível é esse?'},
+      {forQIdx:0,text:'O agente de trânsito registrou uma multa de 7 pontos. Qual a classificação?'},
+      // Q1 — resposta correta é "Média" (4 pts)
+      {forQIdx:1,text:'Uma infração gera exatamente 4 pontos na CNH. Qual é a classificação dela?'},
     ]
   },
   lei_alcool:{
