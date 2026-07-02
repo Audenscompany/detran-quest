@@ -3,7 +3,7 @@
 // Versão: sincronize com GAME_VERSION do index.html
 // ═══════════════════════════════════════════════════════════════
 
-const CACHE_VERSION = '7.2.3';
+const CACHE_VERSION = '7.2.5';
 const CACHE_NAME    = 'detran-quest-v' + CACHE_VERSION;
 
 // ──────────────────────────────────────────────
