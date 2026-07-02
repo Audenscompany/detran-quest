@@ -6841,7 +6841,7 @@ const USERS={
 let CURRENT_USER_EMAIL=null; // definido no login bem-sucedido (doLogin ou tryAutoLogin)
 // !!! Ao mudar a versão abaixo, mude TAMBÉM o CACHE_VERSION em service-worker.js
 // (mesmo número) — é o que faz o navegador detectar a atualização sozinho. !!!
-const GAME_VERSION='7.2.2'; // v7.2.1: corrige recoveryTryRestore (loadGame não era aguardado com await, causando G nulo em iOS/Cache API); sanitiza saves com estado impossível (conceito "dominado" com 0 tentativas) e dessincronia entre concepts.attempts e conceptState.attempts. v7.2.0: fix menor de consistência. v7.1.0: criação de conta self-service na tela de login (antes só existiam 2 contas fixas escritas no código). E-mail só precisa ter formato válido (não precisa ser real, é só identificador local); senha precisa ter 4+ caracteres e confirmação. Contas criadas ficam salvas neste navegador (detranQuest_registeredUsers_v1) e funcionam com "manter conectado" igual às contas fixas. v7.0.0: 3º lote de conteúdo — 45 conceitos novos (176 no total), cobertura 76%→100% em todas as 11 matérias. Banco de questões de simulado em formato oficial (5 alternativas) com as 150 questões dos simulados reais do aluno + variações próprias, cobrindo 85 conceitos. REGRA NOVA: conceito 'dominado' nunca mais é perguntado no modo estudo — só reaparece se errado dentro de um simulado (eliminada a revisão automática por tempo/contagem que reabria conceitos já dominados sozinha). Elegibilidade de simulado agora exige 'dominado' de verdade (antes bastava 1 tentativa). Corrigido: vaga de PCD/idoso sem credencial agora é Gravíssima (era Grave por engano). v6.0.0: 2º lote de conteúdo — 50 conceitos novos (131 no total), cobertura de 48% para 76%, todas as 11 matérias com progresso real. v5.3.0: 7 temas visuais. v5.2.0: música de foco 40Hz. v5.1.0: PWA + múltiplas contas. v5.0.1: corrige tela preta + recuperação. v5.0.0: chefão dinâmico, revisão por dias, meta recalibrada
+const GAME_VERSION='7.2.3'; // v7.2.1: corrige recoveryTryRestore (loadGame não era aguardado com await, causando G nulo em iOS/Cache API); sanitiza saves com estado impossível (conceito "dominado" com 0 tentativas) e dessincronia entre concepts.attempts e conceptState.attempts. v7.2.0: fix menor de consistência. v7.1.0: criação de conta self-service na tela de login (antes só existiam 2 contas fixas escritas no código). E-mail só precisa ter formato válido (não precisa ser real, é só identificador local); senha precisa ter 4+ caracteres e confirmação. Contas criadas ficam salvas neste navegador (detranQuest_registeredUsers_v1) e funcionam com "manter conectado" igual às contas fixas. v7.0.0: 3º lote de conteúdo — 45 conceitos novos (176 no total), cobertura 76%→100% em todas as 11 matérias. Banco de questões de simulado em formato oficial (5 alternativas) com as 150 questões dos simulados reais do aluno + variações próprias, cobrindo 85 conceitos. REGRA NOVA: conceito 'dominado' nunca mais é perguntado no modo estudo — só reaparece se errado dentro de um simulado (eliminada a revisão automática por tempo/contagem que reabria conceitos já dominados sozinha). Elegibilidade de simulado agora exige 'dominado' de verdade (antes bastava 1 tentativa). Corrigido: vaga de PCD/idoso sem credencial agora é Gravíssima (era Grave por engano). v6.0.0: 2º lote de conteúdo — 50 conceitos novos (131 no total), cobertura de 48% para 76%, todas as 11 matérias com progresso real. v5.3.0: 7 temas visuais. v5.2.0: música de foco 40Hz. v5.1.0: PWA + múltiplas contas. v5.0.1: corrige tela preta + recuperação. v5.0.0: chefão dinâmico, revisão por dias, meta recalibrada
 const SAVE_SCHEMA_VERSION=1; // versão do FORMATO do save — só muda quando estrutura de dados muda de fato
 const AUTH_KEY='detranQuest_auth_v3'; // hash simples local, nunca enviado a servidor
 const AUTH_USER_KEY='detranQuest_authUser_v1'; // qual e-mail está com login automático ativo neste dispositivo
@@ -8780,6 +8780,22 @@ async function generateAIQuestion(concept){
     }
   }catch(e){}
   return null;
+}
+
+// ── VARIAÇÕES DE QUESTÃO (anti-repetição) ─────────────────────────────────────
+// Seleciona aleatoriamente uma variação do texto da questão definida em
+// CONCEPT_EXTRAS[id].variations, filtrando pelo índice da questão (forQIdx).
+// Fallback: retorna Q.txt se não houver variações cadastradas.
+// BUG 7.2.3: função estava ausente do código, causando ReferenceError em
+// renderQuestion() e impedindo qualquer questão de ser exibida.
+function pickQuestionVariation(conceptId, Q, qIdx){
+  try{
+    const extras=CONCEPT_EXTRAS[conceptId];
+    if(!extras||!extras.variations||!Array.isArray(extras.variations)) return Q.txt;
+    const variants=extras.variations.filter(v=>v.forQIdx===qIdx);
+    if(variants.length===0) return Q.txt;
+    return variants[Math.floor(Math.random()*variants.length)].text||Q.txt;
+  }catch(e){ return Q&&Q.txt?Q.txt:''; }
 }
 
 function goQuestion(){
