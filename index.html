@@ -6841,7 +6841,7 @@ const USERS={
 let CURRENT_USER_EMAIL=null; // definido no login bem-sucedido (doLogin ou tryAutoLogin)
 // !!! Ao mudar a versão abaixo, mude TAMBÉM o CACHE_VERSION em service-worker.js
 // (mesmo número) — é o que faz o navegador detectar a atualização sozinho. !!!
-const GAME_VERSION='7.2.1'; // v7.2.1: corrige recoveryTryRestore (loadGame não era aguardado com await, causando G nulo em iOS/Cache API); sanitiza saves com estado impossível (conceito "dominado" com 0 tentativas) e dessincronia entre concepts.attempts e conceptState.attempts. v7.2.0: fix menor de consistência. v7.1.0: criação de conta self-service na tela de login (antes só existiam 2 contas fixas escritas no código). E-mail só precisa ter formato válido (não precisa ser real, é só identificador local); senha precisa ter 4+ caracteres e confirmação. Contas criadas ficam salvas neste navegador (detranQuest_registeredUsers_v1) e funcionam com "manter conectado" igual às contas fixas. v7.0.0: 3º lote de conteúdo — 45 conceitos novos (176 no total), cobertura 76%→100% em todas as 11 matérias. Banco de questões de simulado em formato oficial (5 alternativas) com as 150 questões dos simulados reais do aluno + variações próprias, cobrindo 85 conceitos. REGRA NOVA: conceito 'dominado' nunca mais é perguntado no modo estudo — só reaparece se errado dentro de um simulado (eliminada a revisão automática por tempo/contagem que reabria conceitos já dominados sozinha). Elegibilidade de simulado agora exige 'dominado' de verdade (antes bastava 1 tentativa). Corrigido: vaga de PCD/idoso sem credencial agora é Gravíssima (era Grave por engano). v6.0.0: 2º lote de conteúdo — 50 conceitos novos (131 no total), cobertura de 48% para 76%, todas as 11 matérias com progresso real. v5.3.0: 7 temas visuais. v5.2.0: música de foco 40Hz. v5.1.0: PWA + múltiplas contas. v5.0.1: corrige tela preta + recuperação. v5.0.0: chefão dinâmico, revisão por dias, meta recalibrada
+const GAME_VERSION='7.2.2'; // v7.2.1: corrige recoveryTryRestore (loadGame não era aguardado com await, causando G nulo em iOS/Cache API); sanitiza saves com estado impossível (conceito "dominado" com 0 tentativas) e dessincronia entre concepts.attempts e conceptState.attempts. v7.2.0: fix menor de consistência. v7.1.0: criação de conta self-service na tela de login (antes só existiam 2 contas fixas escritas no código). E-mail só precisa ter formato válido (não precisa ser real, é só identificador local); senha precisa ter 4+ caracteres e confirmação. Contas criadas ficam salvas neste navegador (detranQuest_registeredUsers_v1) e funcionam com "manter conectado" igual às contas fixas. v7.0.0: 3º lote de conteúdo — 45 conceitos novos (176 no total), cobertura 76%→100% em todas as 11 matérias. Banco de questões de simulado em formato oficial (5 alternativas) com as 150 questões dos simulados reais do aluno + variações próprias, cobrindo 85 conceitos. REGRA NOVA: conceito 'dominado' nunca mais é perguntado no modo estudo — só reaparece se errado dentro de um simulado (eliminada a revisão automática por tempo/contagem que reabria conceitos já dominados sozinha). Elegibilidade de simulado agora exige 'dominado' de verdade (antes bastava 1 tentativa). Corrigido: vaga de PCD/idoso sem credencial agora é Gravíssima (era Grave por engano). v6.0.0: 2º lote de conteúdo — 50 conceitos novos (131 no total), cobertura de 48% para 76%, todas as 11 matérias com progresso real. v5.3.0: 7 temas visuais. v5.2.0: música de foco 40Hz. v5.1.0: PWA + múltiplas contas. v5.0.1: corrige tela preta + recuperação. v5.0.0: chefão dinâmico, revisão por dias, meta recalibrada
 const SAVE_SCHEMA_VERSION=1; // versão do FORMATO do save — só muda quando estrutura de dados muda de fato
 const AUTH_KEY='detranQuest_auth_v3'; // hash simples local, nunca enviado a servidor
 const AUTH_USER_KEY='detranQuest_authUser_v1'; // qual e-mail está com login automático ativo neste dispositivo
@@ -7549,17 +7549,32 @@ ${diag.stack}</pre>
 // o código continuava com G nulo, travando silenciosamente na recovery screen.
 async function recoveryTryRestore(){
   try{
+    // Passo 1: recarregar save com sanitização
     if(typeof G!=='undefined' && G) ensureConceptIntegrity();
     await loadGame();
     ensureConceptIntegrity();
-    if(!G.curConceptId || !getConceptById(G.curConceptId)){
-      G.curConceptId=getNextConceptId(); // estado atual inválido → redireciona pro próximo conceito válido
+    // Passo 2: RESET DE POSIÇÃO — preserva XP/streak/progresso mas limpa
+    // estado corrente (curConceptId problematico travava nextStep).
+    if(typeof G!=='undefined' && G){
+      G.curConceptId=null; G.curQIdx=0; G.answered=false;
+      G.wrongCount=0; G.inSim=false; G._simIsPartial=false; G._bossQueued=false;
     }
+    // Passo 3: renderizar
     buildAppShell();
     nextStep();
   }catch(e){
     console.error('recoveryTryRestore falhou:',e);
-    showRecoveryScreen(e);
+    // Ultima chance: G zerado mas com progresso salvo
+    try{
+      if(typeof G==='undefined'||!G) G=freshState();
+      ensureConceptIntegrity();
+      G.curConceptId=null; G.inSim=false;
+      buildAppShell();
+      nextStep();
+    }catch(e2){
+      console.error('recoveryTryRestore fallback falhou:',e2);
+      showRecoveryScreen(e2);
+    }
   }
 }
 
